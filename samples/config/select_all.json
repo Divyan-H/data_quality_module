@@ -1,0 +1,7 @@
+{
+  "structure": {
+    "selection": {
+      "s-1": [{"table": "t1"}, {"table": "t2"}, {"table": "t3"}]
+    }
+  }
+}

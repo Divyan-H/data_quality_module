@@ -1,0 +1,68 @@
+environment: dev
+data_path: ./data/
+api:
+  host: 127.0.0.1           # the service has no login yet (docs/prd/before_production.md P-02): keep it on this machine
+  port: 8000
+
+# Analyst web app (src/orchestration/settings.py documents every key).
+service:
+  workspace: ./data/runs    # one folder per run: inputs, every phase's output, uploads, audit trail
+  max_upload_mb: 500
+  max_review_upload_mb: 200
+  max_concurrent_jobs: 2
+  job_timeout_min: 180
+  llm:
+    model: llama3.2:3b      # must be pulled in Ollama (`ollama pull llama3.2:3b`)
+    review: all             # all = the model reviews every decision (spec default); near_ties = only where the rules are unsure (faster)
+  hygiene_defaults_off: [D-14, D-27]   # start switched off in the UI: capping 'outliers' / filling isolated zeros rewrites a time series that Phases C and D check (see decision log)
+
+# Phase B - cell-level data hygiene (src/hygiene). Only what differs from the built-in defaults needs to be listed;
+# every key is documented in src/hygiene/config.py.
+hygiene:
+  fixes:                    # true = fix automatically and log; false = detect only, propose the change in Needs_Review
+                            # D-12/14/22 change meaning: each changed cell is also on Needs_Review (Reject undoes it)
+                            # D-05, D-06, D-23 cannot be fixed by code (no formula result / external file / cut text)
+                            # D-15 (a numeric column with negative values) is flag-only: it never changes a value
+    D-01: true              # number Excel showed as a date -> its serial number
+    D-02: true              # Feb 30 -> last real day (month 13 / bad year -> NULL + review, always)
+    D-03: true              # mixed date formats -> the column's dominant format
+    D-04: true              # mixed types: differently written numbers; non-numbers -> NULL + review
+    D-07: true              # #REF! -> NULL
+    D-08: true              # #VALUE!, #N/A ... -> NULL
+    D-09: true              # leading/trailing/double spaces
+    D-10: true              # case variants -> dominant spelling
+    D-11: true              # header whitespace
+    D-12: true              # near-duplicate names merged into the most frequent spelling; test/dummy/9999 -> NULL
+    D-13: true              # control / non-printable characters -> space
+    D-14: true              # outliers capped to the nearest normal value (original kept on Needs_Review)
+    D-16: true              # columns renamed from the data dictionary's standard names
+    D-18: true              # NA, N/A, null, None, - ... -> NULL (unless the column's own top value)
+    D-19: true              # exact duplicate rows dropped (first kept)
+    D-20: true              # mojibake re-decoded
+    D-21: true              # long numbers / account / phone columns kept as text
+    D-22: true              # mixed units converted to the column's majority unit
+    D-24: true              # leading zeros restored on ZIP/product codes
+    D-25: true              # Excel date serials -> dates
+    E-01: true              # currency symbols and thousands separators removed
+    N-02: true              # blank string -> NULL
+  outlier_z: 3.5            # D-14 robust z-score threshold
+  dayfirst: true            # how to read 05/06/2026 when the column gives no evidence
+  data_dictionary: null     # optional csv/xlsx: column name [, standard name] - D-16 renames to the standard name
+
+# Phase C - time-series / execution checks (src/timeseries). Per-client settings (columns, variables, month labels,
+# date ranges, No of Weeks) come from the client config workbook passed with --client-config; these are the
+# service-wide defaults. Every key is documented in src/timeseries/config.py.
+timeseries:
+  min_zero_weeks: 9         # N-07 run length in periods; the workbook's "No of Weeks" (No Executions row) overrides it
+  dayfirst: false           # how to read 05/06/2026 text periods when the column gives no evidence (reference: month first)
+  require_geography: true   # the Data File sheet must map Geography (one of the label columns that split the table into series)
+  client_codes: [N-07, N-10, N-12]   # findings marked client_report in findings.json, for the Gate
+  max_sheet_rows: 100000    # rows per findings sheet in the report; findings.json always has every finding
+
+# Phase D - trend and period-over-period change checks (src/trends). No rule threshold is set here (spec DP-D §3.6):
+# every threshold comes from the client config workbook (Data Check Specifications, Ratio Definitions), and a rule
+# without one does not run - Rules_Used and run.json list it as INACTIVE. Every key is documented in src/trends/config.py.
+trends:
+  dayfirst: false           # how to read 05/06/2026 text periods when the column gives no evidence (as Phase C)
+  client_codes: [N-16, N-17, N-18, N-19, N-20]   # findings marked client_report in findings.json, for the Gate
+  max_sheet_rows: 1000000   # rows per report sheet (Excel holds 1,048,576); findings.json always has every finding

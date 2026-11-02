@@ -1,0 +1,98 @@
+<title>Phase A Break Test Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@600;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: one reading column; a summary strip, then the bug table, then LLM results and open items. */
+:root {
+  --bg: #f7f8f6; --surface: #ffffff; --fg: #1c2321; --muted: #5b6662; --line: #dde2df;
+  --accent: #2f6b5a; --ok: #2f7a3e; --ok-bg: #e5f2e7; --warn: #8a5a00; --warn-bg: #fbf0d9;
+  --display: "Libre Franklin", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Sans 3", "Segoe UI", Arial, sans-serif;
+  --mono: "IBM Plex Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141917; --surface: #1c2321; --fg: #e6ebe8; --muted: #9aa6a1; --line: #2e3734;
+  --accent: #7fc4ad; --ok: #8fd39c; --ok-bg: #1f3324; --warn: #f0c56e; --warn-bg: #3a2f17; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141917; --surface: #1c2321; --fg: #e6ebe8; --muted: #9aa6a1; --line: #2e3734;
+  --accent: #7fc4ad; --ok: #8fd39c; --ok-bg: #1f3324; --warn: #f0c56e; --warn-bg: #3a2f17; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 16px/1.55 var(--body); }
+main { max-width: 900px; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: grid; gap: 36px; }
+h1, h2 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: 1.9rem; line-height: 1.2; }
+h2 { font-size: 1.2rem; margin-bottom: 12px; }
+p { margin: 0; max-width: 65ch; }
+.eyebrow { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+header { display: grid; gap: 10px; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; }
+.stat b { display: block; font: 700 1.6rem/1.1 var(--display); color: var(--accent); font-variant-numeric: tabular-nums; }
+.stat span { font-size: .9rem; color: var(--muted); }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: .95rem; min-width: 640px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+th { font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--mono); color: var(--muted); width: 2.5em; }
+.pill { display: inline-block; font-size: .78rem; font-weight: 600; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.fixed { color: var(--ok); background: var(--ok-bg); }
+.open { color: var(--warn); background: var(--warn-bg); }
+ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 70ch; }
+code { font-family: var(--mono); font-size: .88em; }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">Data Quality ELT · Phase A (Structure) · 2 October 2026</div>
+    <h1>Break test: bugs found and fixed</h1>
+    <p>Today I tried to break the Phase A structure step on purpose. I used two test workbooks that hold every structural problem we handle, 31 deliberately broken files, and real files saved by Excel. I also ran the local AI model (llama3.2:3b) against the same workbooks. Every bug I found is fixed and has an automated test.</p>
+  </header>
+
+  <section class="summary" aria-label="Summary">
+    <div class="stat"><b>9</b><span>bugs found, all fixed</span></div>
+    <div class="stat"><b>178</b><span>automated tests, all passing</span></div>
+    <div class="stat"><b>0</b><span>crashes on 31 broken files</span></div>
+    <div class="stat"><b>45 s</b><span>for a 1-million-cell sheet (target 60 s)</span></div>
+  </section>
+
+  <section>
+    <h2>Bugs and fixes</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>#</th><th>What went wrong</th><th>What we changed</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td class="n">1</td><td>A merged heading over an empty column made one table split in two. A hidden column next to it became its own one-column table.</td><td>The table finder now treats merged cells as joined and won't split a table through them.</td><td><span class="pill fixed">Fixed</span></td></tr>
+          <tr><td class="n">2</td><td>An empty spacer column inside a table disappeared without being reported.</td><td>It is now listed as a dropped column, so the analyst can see it.</td><td><span class="pill fixed">Fixed</span></td></tr>
+          <tr><td class="n">3</td><td>When a merged title was removed from above a table, it was left out of the merged-cell count.</td><td>Title merges are now counted with the rest.</td><td><span class="pill fixed">Fixed</span></td></tr>
+          <tr><td class="n">4</td><td>Password-protected <code>.xls</code> and <code>.ods</code> files were reported as "unreadable", which doesn't tell the analyst what to do.</td><td>They are now reported as password-protected, with the message "Remove the password".</td><td><span class="pill fixed">Fixed</span></td></tr>
+          <tr><td class="n">5</td><td>A block of cells holding only spaces was treated as a real table.</td><td>Cells that hold only spaces are now ignored.</td><td><span class="pill fixed">Fixed</span></td></tr>
+          <tr><td class="n">6</td><td>False warnings: every run without the AI model said "AI review fell back", and a CSV's file name was flagged as a bad sheet name.</td><td>Both warnings are removed.</td><td><span class="pill fixed">Fixed</span></td></tr>
+          <tr><td class="n">7</td><td>Excel had to "repair" the review workbook on open, because cell formats and comments from one sheet were applied to another.</td><td>Each sheet now gets only its own formats and comments. Excel opens the file cleanly.</td><td><span class="pill fixed">Fixed</span></td></tr>
+          <tr><td class="n">8</td><td>Opening and saving the review workbook in Excel, with no changes, created fake edits (Excel rounds numbers to 15 digits).</td><td>Numbers are now compared the way Excel stores them. An untouched file imports with no changes, and real edits still apply.</td><td><span class="pill fixed">Fixed</span></td></tr>
+          <tr><td class="n">9</td><td>When only the model name was configured, the AI decision log didn't record which exact model version answered.</td><td>The model version reported by the AI server is now saved with every decision.</td><td><span class="pill fixed">Fixed</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>AI model test (llama3.2:3b)</h2>
+    <ul>
+      <li>It ran on all three test files with no crashes. Every answer was valid.</li>
+      <li>The cleaned tables were identical with and without the AI.</li>
+      <li>Every time the model disagreed with the rules, the model was wrong. The safety checks blocked every wrong answer, so no bad change reached the data.</li>
+      <li>The cost was time (about 5–6 minutes per workbook) and 2 unnecessary warnings per workbook.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Open items and decisions needed</h2>
+    <ul>
+      <li><span class="pill open">Decision</span> Ask the AI only about close calls (<code>review: near_ties</code>). This cut AI calls by two-thirds (150 to 51) and removes the unnecessary warnings.</li>
+      <li><span class="pill open">Decision</span> Reduce the AI's context size in the spec. On a 4 GB GPU this makes each call about 21% faster.</li>
+      <li><span class="pill open">Open</span> A side calculation placed right next to a table, with no empty column between, is read as part of the table. The analyst can exclude it in the review workbook.</li>
+      <li><span class="pill open">Open</span> Very large sheets are held fully in memory. Very large sheets are refused with a "sheet too large" message rather than run out of memory.</li>
+      <li><span class="pill open">Open</span> Converting <code>.xls</code>, <code>.xlsb</code> and <code>.ods</code> files is untested because LibreOffice isn't installed on this machine.</li>
+    </ul>
+  </section>
+</main>

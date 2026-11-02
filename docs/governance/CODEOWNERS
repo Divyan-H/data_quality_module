@@ -1,0 +1,45 @@
+# === Claude-only Governance ===
+# Place this file at .github/CODEOWNERS (GitHub) once uploaded to the repo root,
+# or keep it here and copy it there — GitHub only reads CODEOWNERS from
+# the repo root, /docs, or /.github.
+#
+# PLACEHOLDER HANDLES: every @handle below (@raghavan, @tech-leads,
+# @architects, @product-team, @engineering-team, @devops-team, @admins) is a
+# stand-in. Before this file takes effect, create matching GitHub teams (or
+# swap in real usernames) in the org this repo lives in — an unresolved
+# handle means GitHub silently can't assign that reviewer.
+
+# Prompts (only Raghavan + Tech Leads)
+prompts/ @raghavan @tech-leads
+
+# Architecture
+docs/architecture/ @architects
+
+# PRDs
+docs/prd/ @product-team
+
+# Decision logs
+docs/decisions/ @product-team @architects
+
+# Code modules
+src/ingestion/ @engineering-team
+src/processing/ @engineering-team
+src/storage/ @engineering-team
+src/analytics/ @engineering-team
+src/llm_interface/ @engineering-team
+src/api/ @engineering-team
+src/orchestration/ @engineering-team
+src/monitoring/ @engineering-team
+src/security/ @engineering-team
+src/utils/ @engineering-team
+
+# Tests
+tests/ @engineering-team
+
+# Config
+config/ @engineering-team @devops-team
+
+# Repo-level files
+README.md @raghavan @admins
+requirements.txt @engineering-team
+.gitignore @admins

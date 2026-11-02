@@ -1,0 +1,13 @@
+pytest
+openpyxl
+lxml
+pyarrow
+fastapi
+uvicorn
+httpx
+charset-normalizer
+polars
+pyyaml
+
+python-multipart
+psutil

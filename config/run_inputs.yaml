@@ -1,0 +1,34 @@
+# Answers the project gives after uploading its files. The web app reads and writes this same structure
+# (GET / PUT /api/v1/runs/{id}/inputs) into the run's own copy; this file is the default for every run.
+# Documented in src/common/run_inputs.py. Everything is optional: an empty value means "no rule from the project".
+
+project: null
+
+# Columns every sheet of the project should have. A missing one is flagged (rule D-32) with the nearest column name.
+# Names are not exact in the client's files, so a header matches by: the same name ignoring case, spaces and punctuation
+# (Sub-Platform = sub_platform = subplatform), a listed synonym (Week Start = date, Channel = platform), the name as whole
+# words of a longer header (Platform Name), or a typo. The synonyms are the `column_synonyms` setting.
+expected_columns:
+  all_sheets: [date, platform, subplatform, city]    # fixed for now; later asked as input per project
+  sheets: {}                  # a sheet name, a file name or a table ref: its extra columns, e.g. {Daily_Media: [Clicks]}
+  strict: false               # true: columns that are not on the list are mentioned as well
+
+# Which columns the cell rules look at. A table that is not listed is checked in full. Columns that are not chosen
+# are passed on exactly as they were read.
+columns_to_check:
+  - table: "*"
+    columns: all
+  # - table: Daily_Media
+  #   columns: [Spend, Clicks]
+
+# The project's own city list. With a list, its spellings are the standard and any other city name is flagged (rule D-30).
+cities: []
+
+# Default currency and conversion rates (stored for the modules that convert; nothing converts values yet).
+currency:
+  default: INR
+  rates_level: quarterly      # quarterly | daily: how the rates below are given
+  rates: {}
+  # rates:                    # one unit of the currency = this many units of the default currency
+  #   USD: {2024-Q1: 83.1, 2024-Q2: 83.4}        # quarterly: 2024-Q1
+  #   EUR: {2024-03-15: 90.2}                    # daily: an ISO date

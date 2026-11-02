@@ -1,0 +1,26 @@
+# Paste into the run inputs after Phase A is accepted (or PUT /api/v1/runs/<id>/inputs).
+project: DQ feature test
+
+expected_columns:
+  all_sheets: [date, platform, subplatform, city]
+
+columns_to_check:
+  - table: "*"
+    columns: all
+  - table: Column_Choice          # only these three are checked; Remarks is passed on as read
+    columns: [Date, City, Spend]
+
+# The client's own list: its spellings are the standard. Jaipur is left out on purpose.
+cities:
+  - Bengaluru
+  - Mumbai
+  - Delhi
+  - Hyderabad
+  - Chennai
+  - Kolkata
+  - Pune
+
+currency:
+  default: INR
+  rates_level: quarterly
+  rates: {}
