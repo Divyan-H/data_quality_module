@@ -94,8 +94,7 @@ class HygienePhase(Phase):
         ctx.emit.stage("applying your review", 0)
         ensure_workbook(upload)
         try:
-            result = apply_upload(paths.work, upload, load_config(ctx.settings_path, {
-                **overrides_from(params), **hygiene_overrides(load_for_run(ctx.run)[0])}))
+            result = apply_upload(paths.work, upload, self.config_for(ctx, params))
         except ReviewError as e:
             raise ReviewRejected([{"message": p} for p in e.problems]) from e
         except FileNotFoundError as e:
@@ -105,6 +104,21 @@ class HygienePhase(Phase):
 
     def clear(self, run: Path) -> None:
         wipe(Paths(run).work / OUT)
+
+    # -- Fix-with-agent ------------------------------------------------
+    supports_agent = True
+
+    def config_for(self, ctx: Context, params: dict) -> dict:
+        """The hygiene settings a run's review and agent changes use: the run's fix switches and run inputs."""
+        return load_config(ctx.settings_path, {**overrides_from(params), **hygiene_overrides(load_for_run(ctx.run)[0])})
+
+    def agent_workspace(self, ctx: Context, params: dict):
+        from src.agent.workspace import HygieneWorkspace
+        return HygieneWorkspace(ctx.paths.work, self.config_for(ctx, params))
+
+    def agent_views(self, run: Path):
+        from src.agent.views import HygieneViews
+        return HygieneViews(Paths(run).work)
 
     def summary(self, run: Path) -> dict:
         out = Paths(run).work / OUT

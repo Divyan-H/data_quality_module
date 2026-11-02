@@ -27,9 +27,9 @@ def _instrument_llm(emit: Emitter) -> dict:
     original = OllamaClient.chat
     state = {"calls": 0, "failed": 0, "seconds": 0.0}
 
-    def chat(self, prompt, schema, seed, temperature):
+    def chat(self, prompt, schema, seed, temperature, **kw):
         t0 = time.monotonic()
-        out = original(self, prompt, schema, seed, temperature)
+        out = original(self, prompt, schema, seed, temperature, **kw)
         state["calls"] += 1
         state["failed"] += out is None
         state["seconds"] += time.monotonic() - t0
@@ -48,7 +48,7 @@ def main(job_dir: str) -> int:
     run = Path(req["run_dir"])
     emit = Emitter(run, req["job_id"], req["phase"])
     handler = EventLogHandler(emit)
-    for name in ("dq.hygiene", "dq.timeseries", "dq.trends"):
+    for name in ("dq.hygiene", "dq.timeseries", "dq.trends", "dq.agent"):
         lg = logging.getLogger(name)
         lg.setLevel(logging.INFO)
         lg.addHandler(handler)               # also keeps the phases from adding their own console handler
@@ -71,9 +71,14 @@ def main(job_dir: str) -> int:
             data = {"path": str(phase.make_template(ctx, params.get("table")))}
         elif action == "check_config":
             data = phase.check_config(ctx, Path(req["upload"]), params.get("table"))
+        elif action.startswith("agent_"):
+            from src.orchestration.agent import run_action
+            emit.stage({"agent_message": "planning", "agent_apply": "applying the change",
+                        "agent_undo": "undoing the last change"}.get(action, action), 10)
+            data = run_action(phase, ctx, action, params)
         else:
             raise PhaseError("bad_action", f"unknown action {action}")
-        if action in ("run", "review"):
+        if action in ("run", "review", "agent_apply", "agent_undo"):
             emit.stage("summarising", 100)
             (run / "summaries").mkdir(exist_ok=True)
             (run / "summaries" / f"{phase.key}.json").write_text(

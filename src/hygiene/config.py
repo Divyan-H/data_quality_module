@@ -52,6 +52,7 @@ RULE_TEXT = {
     "E-01": "Currency symbols and thousands separators removed",
     "N-02": "Blank text -> NULL",
     "analyst": "Analyst edit from the review workbook",
+    "agent": "Change made through the Fix-with-agent chat, approved by the analyst",
 }
 
 # Checklist ids that share one implementation with a D-code (audit and report show both).

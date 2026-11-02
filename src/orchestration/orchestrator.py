@@ -19,6 +19,7 @@ from pathlib import Path
 from src.common import run_inputs
 from src.llm_interface.ollama_status import probe
 from src.orchestration import bundle
+from src.orchestration.agent import JOB_ACTIONS as AGENT_ACTIONS, AgentController, reset_store as reset_agent
 from src.orchestration.phases import ORDER, PHASES, following, previous
 from src.orchestration.phases.base import Paths, PhaseError, read_json
 from src.orchestration.phases.hygiene import fix_catalogue
@@ -69,6 +70,7 @@ class Pipeline:
         self.runner = runner or JobRunner(self.store, settings.settings_path, self._finished,
                                           settings.max_concurrent_jobs, settings.job_timeout_min * 60)
         self._sync_locks: dict[str, threading.Lock] = {}
+        self.agent = AgentController(self)
         self._recover()
 
     # ------------------------------------------------------------------ startup
@@ -175,6 +177,8 @@ class Pipeline:
                            "legacy_converter": find_libreoffice() is not None,
                            "legacy_extensions": sorted(LEGACY_EXTENSIONS)},
                 "hygiene_fixes": fix_catalogue(set(self.settings.hygiene_defaults_off)),
+                "agent": {"phases": [k for k in ORDER if PHASES[k].supports_agent], "llm": self.settings.agent_llm,
+                          "model": (self.settings.agent_model or self.settings.llm_model) if self.settings.agent_llm else None},
                 "phases": [{"key": k, "title": PHASES[k].title, "short": PHASES[k].short, "uses_llm": PHASES[k].uses_llm,
                             "needs_config": PHASES[k].needs_config} for k in ORDER]}
 
@@ -196,8 +200,10 @@ class Pipeline:
             cfg = ph["config"]
             ph.update(status=LOCKED if k != key else ph["status"], error=None, upload_error=None, uploads=[],
                       started_at=None, finished_at=None, params={}, llm=None, candidates=None,
-                      skipped=False, skip_reason=None)
+                      skipped=False, skip_reason=None, agent=None, agent_error=None)
             ph.pop("_reviewing", None)
+            ph.pop("_agent", None)
+            reset_agent(run, k, wipe=True)               # its chat and change-sets described data that is gone
             if k != key and cfg["uploaded"]:         # the data it described has changed: check it again before use
                 cfg.update(valid=False, preview=None, error=None)
         shutil.rmtree(Paths(run).final, ignore_errors=True)
@@ -522,6 +528,7 @@ class Pipeline:
                                           "applied": outcome.get("data", {}).get("applied")})
                     ph["error"] = None
                     self._clear_from(st, run, job.phase, include_self=False)      # later phases saw the old data
+                    reset_agent(run, job.phase, wipe=False)                       # agent proposals predate the upload
                 else:
                     ph["status"] = was.get("was", REVIEW) if outcome["kind"] != "crash" else FAILED
                     ph["upload_error"] = {"code": outcome.get("code"), "message": outcome["message"],
@@ -529,6 +536,8 @@ class Pipeline:
                     ph["uploads"].append({"name": was.get("name"), "at": now(), "ok": False})
                     if outcome["kind"] == "crash":
                         ph["error"] = {"code": outcome.get("code"), "message": outcome["message"]}
+            elif job.action in AGENT_ACTIONS:
+                self.agent.finished(st, run, job, outcome)
         try:
             self.store.update(job.run_id, apply)
         except RunNotFound:

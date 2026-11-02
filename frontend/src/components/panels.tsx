@@ -455,6 +455,7 @@ export function ReviewPanel({
   onGoNext,
   onChange,
   onError,
+  onOpenAgent,
 }: {
   run: Run;
   phase: Phase;
@@ -466,11 +467,13 @@ export function ReviewPanel({
   onGoNext: () => void;
   onChange: (r: Run) => void;
   onError: (e: unknown) => void;
+  /** Present when this phase supports the Fix-with-agent screen. */
+  onOpenAgent?: () => void;
 }) {
   const [summary, setSummary] = useState<unknown>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [choices, setChoices] = useState(0);
-  const version = `${phase.attempt}:${phase.uploads.length}:${phase.finished_at}:${choices}`;
+  const version = `${phase.attempt}:${phase.uploads.length}:${phase.finished_at}:${choices}:${phase.agent?.last_at ?? ""}`;
   const selectTables = async (refs: string[]) => {
     try {
       onChange(await api.selectTables(run.id, refs));
@@ -516,6 +519,19 @@ export function ReviewPanel({
           {!!summary && phase.key === "D" && <SummaryDView s={summary as SummaryD} />}
         </div>
       </div>
+      {onOpenAgent && (
+        <div className="card card-pad agent-entry">
+          <div className="grow">
+            <h3>Fix with the agent</h3>
+            <p className="muted small">
+              See the data and the open issues side by side and say what to change: “accept all date fixes except row 14”,
+              “Head Office is Bangalore”, “Spend is in thousands”. Every change is previewed first and logged in the audit.
+              {phase.agent?.applied ? ` ${plural(phase.agent.applied, "change")} applied so far.` : ""}
+            </p>
+          </div>
+          <button className="btn primary" onClick={onOpenAgent} disabled={busy}>Fix with agent</button>
+        </div>
+      )}
       <div className="card">
         <div className="card-head">
           <h2>Your review</h2>

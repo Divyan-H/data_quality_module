@@ -14,6 +14,9 @@ service:
   llm:
     model: llama3.2:3b      # must be pulled in Ollama (`ollama pull llama3.2:3b`)
     review: all             # all = the model reviews every decision (spec default); near_ties = only where the rules are unsure (faster)
+  agent:                    # Fix-with-agent chat on the review screens (src/agent, docs/agent_architecture.md)
+    llm: on                 # on = the local model plans instructions the built-in command parser does not recognise; off = commands only
+    model: null             # null = the model above; a 7B+ instruct model with structured output is recommended (e.g. qwen2.5:7b-instruct)
   hygiene_defaults_off: [D-14, D-27]   # start switched off in the UI: capping 'outliers' / filling isolated zeros rewrites a time series that Phases C and D check (see decision log)
 
 # Phase B - cell-level data hygiene (src/hygiene). Only what differs from the built-in defaults needs to be listed;

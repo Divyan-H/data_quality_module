@@ -79,11 +79,13 @@ class OllamaClient:
         self.digest = self.digest or found.get("digest")    # unpinned: record the build that answers
         return True
 
-    def chat(self, prompt: str, schema: dict, seed: int, temperature: float) -> dict | None:
-        """One vote. Retries once on a transport error or an unparsable answer; None counts as no answer."""
-        payload = {"model": self.model, "stream": False, "format": schema,
-                   "messages": [{"role": "user", "content": prompt}],
-                   "options": {"num_ctx": NUM_CTX, "num_predict": NUM_PREDICT, "seed": seed,
+    def chat(self, prompt: str, schema: dict, seed: int, temperature: float, num_predict: int = NUM_PREDICT,
+             system: str | None = None) -> dict | None:
+        """One vote. Retries once on a transport error or an unparsable answer; None counts as no answer.
+        `num_predict` and `system` are for callers that need a longer answer or a separate system prompt (the agent)."""
+        messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
+        payload = {"model": self.model, "stream": False, "format": schema, "messages": messages,
+                   "options": {"num_ctx": NUM_CTX, "num_predict": num_predict, "seed": seed,
                                "temperature": temperature}}
         for _attempt in range(2):
             try:

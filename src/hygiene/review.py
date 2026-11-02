@@ -345,9 +345,9 @@ def add_columns(t: Table, new: dict[str, list]) -> None:
     table from the start. The rules see only the new columns (the table's text columns still split a long table into
     series for the outlier check). Rules that look across the whole table are not repeated: D-19 (duplicate rows), D-27
     (filling zeros) and D-28 (columns that add up), because they could drop rows or change columns the analyst already
-    reviewed."""
-    from .rules import RULES, additive_columns, duplicates, isolated_gaps
-    skip = {additive_columns, duplicates, isolated_gaps}
+    reviewed, and D-32 (expected columns), which judges the whole sheet and would flag its missing columns again."""
+    from .rules import RULES, additive_columns, duplicates, expected_columns, isolated_gaps
+    skip = {additive_columns, duplicates, isolated_gaps, expected_columns}
     sub = Table(t.ref, {**{c: t.data[c] for c in SYSTEM if c in t.data}, **{c: t.data[c] for c in t.cols}, **new},
                 t.cfg, t.layout_id, t.source_file, t.sheet)
     sub.context_cols = list(t.cols)

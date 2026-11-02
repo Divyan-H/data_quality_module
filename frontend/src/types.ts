@@ -66,6 +66,9 @@ export interface Phase {
   skipped: boolean;
   skip_reason: string | null;
   artifacts: Artifact[];
+  /** Fix-with-agent: how many agent changes were applied / undone, and the last failure (if any). */
+  agent?: { applied: number; undone: number; last_at: string | null } | null;
+  agent_error?: PhaseError | null;
 }
 
 export interface Run {
@@ -112,6 +115,141 @@ export interface ServiceOptions {
   llm: { model: string; review: "near_ties" | "all" };
   limits: { max_upload_mb: number; max_review_upload_mb: number; extensions: string[]; legacy_converter: boolean; legacy_extensions: string[] };
   hygiene_fixes: FixOption[];
+  agent?: { phases: PhaseKey[]; llm: boolean; model: string | null };
+}
+
+/* ------------------------------------------------------------------ Fix-with-agent */
+
+export type AgentMessageKind = "text" | "proposal" | "ask" | "answer" | "result" | "error";
+
+export interface AgentMessage {
+  id: number;
+  role: "user" | "agent";
+  kind: AgentMessageKind;
+  text: string;
+  changeset: string | null;
+  at: string;
+}
+
+export interface CellSample {
+  table: string;
+  file: string | null;
+  sheet: string | null;
+  excel_row: number | null;
+  row_id: string | null;
+  column: string | null;
+  old: string | null;
+  new: string | null;
+  what?: string;
+}
+
+export interface OpEffect {
+  cells: number;
+  items_resolved: number;
+  rows_removed: number;
+  rows_added: number;
+  columns_added: string[];
+  columns_renamed: [string, string][];
+  tables: string[];
+  samples: CellSample[];
+  unmatched: string[];
+  unmatched_total: number;
+  notes: string[];
+}
+
+export interface ChangePreview {
+  operations: { text: string; summary: string; effect: OpEffect }[];
+  totals: { cells: number; items_resolved: number; rows_removed: number; rows_added: number; columns_added: string[]; columns_renamed: [string, string][]; tables: string[] };
+  summary: string;
+  items_answered_by_edits: number;
+  follow_up_fixes: number;
+  open_items_after: number;
+  changes_anything: boolean;
+}
+
+export type ChangeSetStatus = "proposed" | "applied" | "discarded" | "undone" | "stale" | "failed";
+
+export interface ChangeSetView {
+  id: string;
+  status: ChangeSetStatus;
+  instruction: string;
+  source: "rules" | "llm" | "none";
+  summary: string | null;
+  created_at: string;
+  applied_at: string | null;
+  undone_at: string | null;
+  error: string | null;
+  preview: ChangePreview;
+}
+
+export interface AgentState {
+  phase: PhaseKey;
+  status: Status;
+  usable: boolean;
+  working: boolean;
+  job_action: string | null;
+  messages: AgentMessage[];
+  changesets: Record<string, ChangeSetView>;
+  undo: Omit<ChangeSetView, "preview"> | null;
+  error: PhaseError | null;
+  llm: { enabled: boolean; available: boolean; model: string | null; message: string };
+}
+
+export interface IssueGroup {
+  table: string;
+  rule: string;
+  what: string;
+  column: string | null;
+  count: number;
+  cells: number;
+  severity: "info" | "warn" | "block";
+  client: boolean;
+  why: string;
+  suggested: string;
+  examples: string[];
+  rows: number[];
+}
+
+export interface AgentTable {
+  ref: string;
+  file: string | null;
+  sheet: string | null;
+  rows: number | null;
+  columns: string[];
+}
+
+export interface IssuesView {
+  open: number;
+  resolved: number;
+  resolved_by_agent: number;
+  groups: IssueGroup[];
+  tables: AgentTable[];
+}
+
+export interface CellState {
+  rule: string;
+  old?: string | null;
+  note?: string | null;
+  why?: string;
+  proposed?: string | null;
+}
+
+export interface SheetRow {
+  row_id: string;
+  excel_row: number | null;
+  values: Record<string, string | null>;
+  changed: Record<string, CellState>;
+  flagged: Record<string, CellState>;
+}
+
+export interface RowsPage {
+  table: string;
+  columns: string[];
+  total: number;
+  offset: number;
+  limit: number;
+  rows: SheetRow[];
+  column_items: { rule: string; column: string | null; why: string }[];
 }
 
 export type EventItem =

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, type StartOptions } from "../api";
+import { AgentWorkspace } from "../components/agent/AgentWorkspace";
 import { LlmDialog } from "../components/LlmDialog";
 import { ConfigPanel, ReviewPanel, SkippedPanel, StartPanel } from "../components/panels";
 import { RunningPanel } from "../components/RunningPanel";
@@ -36,6 +37,7 @@ export function RunPage({ runId, view, options, llmStatus }: {
   const [rerun, setRerun] = useState<PhaseKey | null>(null);       // show the start screen again for a finished phase
   const [confirmRerun, setConfirmRerun] = useState<PhaseKey | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [agentFor, setAgentFor] = useState<PhaseKey | null>(null);   // the Fix-with-agent screen is open for this phase
 
   // Landing on a run without a phase in the address goes to where the work is.
   useEffect(() => {
@@ -53,6 +55,7 @@ export function RunPage({ runId, view, options, llmStatus }: {
 
   const select = (v: View) => {
     setRerun(null);
+    setAgentFor(null);
     setBanner(null);
     navigate(`/run/${runId}/${v}`);
   };
@@ -105,6 +108,7 @@ export function RunPage({ runId, view, options, llmStatus }: {
     try {
       const r = await api.accept(runId, key);
       setRun(r);
+      setAgentFor(null);
       navigate(`/run/${runId}/${nextKey(key) ?? "results"}`);
     } catch (e) {
       fail(e);
@@ -138,8 +142,15 @@ export function RunPage({ runId, view, options, llmStatus }: {
         </Alert>
       );
     }
+    const agentJob = run!.job?.phase === p.key && run!.job.action.startsWith("agent_");
+    if (agentFor === p.key && (p.status === "review" || p.status === "accepted" || (p.status === "running" && agentJob))) {
+      return (
+        <AgentWorkspace run={run!} phase={p} nextKey={nextKey(p.key)} onChange={setRun} onAccept={() => accept(p.key)}
+          onClose={() => setAgentFor(null)} />
+      );
+    }
     if (p.status === "running") {
-      return <RunningPanel phase={p} events={forPhase(p.key)} onCancel={cancel} cancelling={cancelling} title={run!.job?.action === "review" ? `Applying your edits to Phase ${p.key}` : undefined} />;
+      return <RunningPanel phase={p} events={forPhase(p.key)} onCancel={cancel} cancelling={cancelling} title={run!.job?.action === "review" ? `Applying your edits to Phase ${p.key}` : agentJob ? `Applying the agent's change to Phase ${p.key}` : undefined} />;
     }
     if (p.status === "accepted" && p.skipped && rerun !== p.key) {
       return <SkippedPanel phase={p} nextKey={nextKey(p.key)} onGoNext={() => select(nextKey(p.key) ?? "results")} onSetUp={() => setRerun(p.key)} />;
@@ -165,6 +176,7 @@ export function RunPage({ runId, view, options, llmStatus }: {
         onGoNext={() => select(nextKey(p.key) ?? "results")}
         onChange={setRun}
         onError={fail}
+        onOpenAgent={options?.agent?.phases.includes(p.key) ? () => setAgentFor(p.key) : undefined}
       />
     );
   }
@@ -175,10 +187,14 @@ export function RunPage({ runId, view, options, llmStatus }: {
     <>
       <div className="crumbs"><a href="#/">All runs</a> / {run.name}</div>
       {banner && <div style={{ marginBottom: 16 }}><Alert kind="error">{banner}</Alert></div>}
-      <div className="run-layout">
-        <Stepper run={run} view={current} onSelect={select} />
+      {agentFor && agentFor === current ? (
         <div>{body()}</div>
-      </div>
+      ) : (
+        <div className="run-layout">
+          <Stepper run={run} view={current} onSelect={select} />
+          <div>{body()}</div>
+        </div>
+      )}
 
       {pending && (
         <LlmDialog

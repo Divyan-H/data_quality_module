@@ -1,6 +1,6 @@
 # Agent architecture: instructions in, audited fixes and transformations out
 
-**Status:** proposal, for review · **Builds on:** `docs/agent_build_plan.md`, `docs/open_items_and_next_steps.md` §4–5, the research brief (Nov 2026) · **Scope:** Phases A–D plus a new transformation step
+**Status:** Phase B part built (see `docs/agent_implementation_notes.md` for what exists and how to use it); the rest is the roadmap · **Builds on:** `docs/agent_build_plan.md`, `docs/open_items_and_next_steps.md` §4–5, the research brief (Nov 2026) · **Scope:** Phases A–D plus a new transformation step
 
 **Goal.** After Phases A–D have found the issues, the analyst (later the client) types what to do: "accept every date fix except row 14", "Head Office is Bangalore", "this file is in thousands", "turn the Day 1–31 columns into rows". The agent turns that into a change, shows exactly what will change, and applies it only after a click. Each change goes into the same audit as today and can be saved and replayed on the next file.
 

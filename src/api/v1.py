@@ -40,6 +40,10 @@ class SkipBody(BaseModel):
     reason: str | None = Field(None, max_length=300)
 
 
+class AgentMessageBody(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000, description="what the analyst wants changed, in plain words")
+
+
 async def save_upload(upload: UploadFile, limit: int, tmp: Path) -> Path:
     """Stream an upload to a temp file, stopping as soon as it passes `limit` bytes."""
     tmp.mkdir(parents=True, exist_ok=True)
@@ -184,6 +188,42 @@ def make_router(pipe: Pipeline) -> APIRouter:
     @r.post("/runs/{run_id}/phases/{key}/config/recheck")
     def recheck_config(run_id: str, key: str, table: str | None = None) -> dict:
         return pipe.upload_config(run_id, key, None, None, table)
+
+    # ------------------------------------------------------------------ Fix-with-agent (src/agent)
+    @r.get("/runs/{run_id}/phases/{key}/agent")
+    def agent_state(run_id: str, key: str) -> dict:
+        """The conversation, every change-set with its preview, and whether the last change can be undone."""
+        return pipe.agent.state(run_id, key)
+
+    @r.post("/runs/{run_id}/phases/{key}/agent/messages")
+    def agent_message(run_id: str, key: str, body: AgentMessageBody) -> dict:
+        """Plan an instruction and preview it. Nothing changes until the change-set is applied."""
+        return pipe.agent.message(run_id, key, body.text)
+
+    @r.post("/runs/{run_id}/phases/{key}/agent/changesets/{changeset}/apply")
+    def agent_apply(run_id: str, key: str, changeset: str) -> dict:
+        """Apply a previewed change-set. Returns at once; the outcome arrives through the run's state."""
+        return pipe.agent.apply(run_id, key, changeset)
+
+    @r.post("/runs/{run_id}/phases/{key}/agent/changesets/{changeset}/discard")
+    def agent_discard(run_id: str, key: str, changeset: str) -> dict:
+        return pipe.agent.discard(run_id, key, changeset)
+
+    @r.post("/runs/{run_id}/phases/{key}/agent/undo")
+    def agent_undo(run_id: str, key: str) -> dict:
+        """Restore the data as it was before the last applied change-set."""
+        return pipe.agent.undo(run_id, key)
+
+    @r.get("/runs/{run_id}/phases/{key}/agent/issues")
+    def agent_issues(run_id: str, key: str) -> dict:
+        return pipe.agent.issues(run_id, key)
+
+    @r.get("/runs/{run_id}/phases/{key}/agent/rows")
+    def agent_rows(run_id: str, key: str, table: str, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500),
+                   rule: str | None = None, column: str | None = None,
+                   only: str | None = Query(None, pattern="^(changed|flagged)$")) -> dict:
+        """A page of a table's rows with each cell's state: changed (and from what), or waiting for a decision."""
+        return pipe.agent.rows(run_id, key, table, offset, limit, rule, column, only)
 
     # ------------------------------------------------------------------ files
     @r.get("/runs/{run_id}/results")

@@ -1,4 +1,4 @@
-import type { CandidateTable, ColumnChoiceTable, EventItem, LlmStatus, PhaseKey, Results, Run, RunListItem, ServiceOptions } from "./types";
+import type { AgentState, CandidateTable, ColumnChoiceTable, EventItem, IssuesView, LlmStatus, PhaseKey, Results, RowsPage, Run, RunListItem, ServiceOptions } from "./types";
 
 const BASE = "/api/v1";
 
@@ -101,6 +101,22 @@ export const api = {
   },
   recheckConfig: (id: string, key: PhaseKey, table?: string) =>
     request<Run>(`/runs/${id}/phases/${key}/config/recheck${table ? `?table=${encodeURIComponent(table)}` : ""}`, { method: "POST" }),
+
+  // Fix-with-agent: plan + preview (waits), apply / undo (jobs; the outcome arrives through the run), reads.
+  agent: (id: string, key: PhaseKey) => request<AgentState>(`/runs/${id}/phases/${key}/agent`),
+  agentSay: (id: string, key: PhaseKey, text: string) =>
+    request<{ reply: unknown; state: AgentState }>(`/runs/${id}/phases/${key}/agent/messages`, json({ text })),
+  agentApply: (id: string, key: PhaseKey, cs: string) =>
+    request<Run>(`/runs/${id}/phases/${key}/agent/changesets/${encodeURIComponent(cs)}/apply`, { method: "POST" }),
+  agentDiscard: (id: string, key: PhaseKey, cs: string) =>
+    request<AgentState>(`/runs/${id}/phases/${key}/agent/changesets/${encodeURIComponent(cs)}/discard`, { method: "POST" }),
+  agentUndo: (id: string, key: PhaseKey) => request<Run>(`/runs/${id}/phases/${key}/agent/undo`, { method: "POST" }),
+  agentIssues: (id: string, key: PhaseKey) => request<IssuesView>(`/runs/${id}/phases/${key}/agent/issues`),
+  agentRows(id: string, key: PhaseKey, q: { table: string; offset?: number; limit?: number; rule?: string; column?: string; only?: "changed" | "flagged" }) {
+    const p = new URLSearchParams();
+    Object.entries(q).forEach(([k, v]) => v !== undefined && v !== null && v !== "" && p.set(k, String(v)));
+    return request<RowsPage>(`/runs/${id}/phases/${key}/agent/rows?${p.toString()}`);
+  },
 
   events: (id: string, after: number) => request<{ events: EventItem[]; cursor: number }>(`/runs/${id}/events?after=${after}`),
   results: (id: string) => request<Results>(`/runs/${id}/results`),

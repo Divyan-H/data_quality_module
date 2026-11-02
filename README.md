@@ -39,6 +39,7 @@ it, then build there.
 - `common/` — what the phases share: table loading, values, cadence, one folder per checked table (`units.py`)
 - `orchestration/` — the A -> D state machine, worker processes, final files (`bundle.py`)
 - `api/` — the HTTP API and the analyst web app (`python -m src.api`)
+- `agent/` — Fix-with-agent: plain-English instructions -> previewed, audited, undoable changes ([docs/agent_implementation_notes.md](docs/agent_implementation_notes.md))
 - `llm_interface/` — whether the local Ollama model is reachable
 - `security/` — upload name and path checks
 - `storage/` — run folders and their event log

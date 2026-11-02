@@ -10,6 +10,9 @@
         model: llama3.2:3b
         review: near_ties           near_ties = ask the model only where the rules are unsure; all = ask on every decision
       hygiene_defaults_off: [D-14, D-27]  automatic fixes that start switched off in the UI (see docs/decisions/decision_logs.md)
+      agent:
+        llm: on                     on = the local model plans instructions the command parser does not recognise
+        model: qwen2.5:7b-instruct  the model the Fix-with-agent chat uses (default: llm.model)
 """
 from __future__ import annotations
 
@@ -34,6 +37,8 @@ class ServiceSettings:
     llm_model: str = "llama3.2:3b"
     llm_review: str = "all"
     hygiene_defaults_off: list[str] = field(default_factory=lambda: ["D-14", "D-27"])
+    agent_llm: bool = True
+    agent_model: str | None = None              # None = llm_model
     frontend_dir: Path = REPO_ROOT / "frontend" / "dist"
     cors_origins: list[str] = field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
 
@@ -54,6 +59,10 @@ def load_service_settings(path: str | None = None, **overrides) -> ServiceSettin
     llm = raw.get("llm") or {}
     s.llm_model = os.environ.get("DQ_LLM_MODEL") or llm.get("model") or s.llm_model
     s.llm_review = llm.get("review") or s.llm_review
+    agent = raw.get("agent") or {}
+    if "llm" in agent:
+        s.agent_llm = agent["llm"] not in (False, "off", "false", 0)
+    s.agent_model = os.environ.get("DQ_AGENT_MODEL") or agent.get("model") or s.agent_model
     if "hygiene_defaults_off" in raw:
         s.hygiene_defaults_off = list(raw["hygiene_defaults_off"] or [])
     if raw.get("cors_origins") is not None:

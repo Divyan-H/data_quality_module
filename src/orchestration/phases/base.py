@@ -163,6 +163,17 @@ class Phase:
     def check_config(self, ctx: Context, workbook: Path, table: str | None) -> dict:
         raise NotImplementedError
 
+    # -- Fix-with-agent (src/agent) ---------------------------------------
+    supports_agent: bool = False
+
+    def agent_workspace(self, ctx: Context, params: dict):
+        """The phase's data as an agent Workspace (preview / apply / restore). Only phases with supports_agent."""
+        raise PhaseError("agent_not_available", f"The agent is not available for Phase {self.key} yet.")
+
+    def agent_views(self, run: Path):
+        """Read-only views for the agent screen (grouped issues, pages of rows)."""
+        raise PhaseError("agent_not_available", f"The agent is not available for Phase {self.key} yet.")
+
 
 # ------------------------------------------------------------------ small shared helpers
 def friendly(message: str) -> str:
