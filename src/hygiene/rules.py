@@ -509,7 +509,7 @@ def dates(t):
         if t.kind(col) != "date":
             continue
         args = t.date_args(col)
-        parse_all = lambda: {i: parse_date(v, *args) for i, v in enumerate(t.data[col]) if v is not None and (col, i) not in t.held}
+        parse_all = lambda col=col, args=args: {i: parse_date(v, *args) for i, v in enumerate(t.data[col]) if v is not None and (col, i) not in t.held}
         for i, (status, ymd, shape) in parse_all().items():
             v = t.data[col][i]
             if status == "clamp":                                   # Feb 30 -> Feb 28: no decision needed
@@ -657,7 +657,7 @@ def near_duplicates_and_sentinels(t):
             names = sorted(v for v in counts if len(v) <= 40)      # names and codes, not free text or lists
             parent = {v: v for v in names}                         # union-find over near-duplicate pairs
 
-            def root(v):
+            def root(v, parent=parent):
                 while parent[v] != v:
                     v = parent[v]
                 return v

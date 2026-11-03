@@ -302,3 +302,58 @@ def test_reshaping_in_phase_b_points_to_phase_t(ws):
     from src.agent.operations import Unpivot
     with pytest.raises(AgentError, match="Phase T"):
         ws.preview([Unpivot(columns=["Orders", "AOV"])], "cs-0001", "x")
+
+
+def test_the_model_schema_takes_rule_codes_and_if_else_rules(ctx):
+    """'rules' means rule codes for resolve_findings and branches for classify: the schema must allow both shapes."""
+    from src.agent.planner.llm import schema
+    items = schema(ctx)["properties"]["ops"]["items"]["properties"]["rules"]["items"]
+    assert {"type": "string"} in items["anyOf"] and any(i.get("type") == "object" for i in items["anyOf"])
+    codes = Planner(LlmPlanner(FakeClient({"intent": "change", "ops": [{"op": "resolve_findings", "decision": "keep", "rules": ["D-30"]}]})))
+    assert codes.plan("handle the city spelling questions quietly", ctx).ops[0].rules == ["D-30"]
+    branches = Planner(LlmPlanner(FakeClient({"intent": "change", "ops": [{"op": "classify", "column": "Size", "default": "Small",
+                                                                           "rules": [{"when": [{"column": "Spend", "op": "gt", "value": 4000}], "value": "Big"}]}]})))
+    assert branches.plan("tag big spenders", ctx).ops[0].rules[0].value == "Big"
+
+
+# ── Phase B recipes: this month's value fixes, replayed next month ────────────
+def test_phase_b_recipe_saves_replayable_fixes_and_applies_them_to_another_run(base_run, tmp_path):
+    from src.agent.recipes import RecipeLibrary
+    lib = RecipeLibrary(tmp_path / "recipes")
+    first, second = tmp_path / "first", tmp_path / "second"
+    shutil.copytree(base_run, first)
+    shutil.copytree(base_run, second)
+    a = AgentService(HygieneWorkspace(first, load_config(None)), AgentStore(first, "B"), Planner(None), lib)
+    a.apply(a.message("Head Office is Bangalore")["changeset"]["id"])
+    a.apply(a.message("in row 3 set City to Pune")["changeset"]["id"])          # names a row: this file only
+    saved = a.message("save recipe as Monthly cities")["messages"][1]["text"]
+    assert "(1 step(s))" in saved and "1 step(s) naming Excel rows were left out" in saved
+    assert "Monthly cities (1 step(s))" in a.message("list recipes")["messages"][1]["text"]
+
+    b = AgentService(HygieneWorkspace(second, load_config(None)), AgentStore(second, "B"), Planner(None), lib)
+    proposal = b.message("use recipe Monthly cities")["changeset"]
+    assert proposal["preview"]["totals"]["cells"] == 1
+    b.apply(proposal["id"])
+    assert "Head Office" not in column(b.ws, "City")
+
+
+def test_a_phase_t_recipe_is_refused_in_phase_b(run, tmp_path):
+    from src.agent.recipes import RecipeLibrary
+    lib = RecipeLibrary(tmp_path / "recipes")
+    lib.save("Reshape", [{"op": "unpivot", "columns": ["Orders", "AOV"]}], "T", phase="T")
+    svc = AgentService(HygieneWorkspace(run, load_config(None)), AgentStore(run, "B"), Planner(None), lib)
+    reply = svc.message("use recipe Reshape")
+    assert reply["changeset"] is None and "Phase T recipe" in reply["messages"][1]["text"]
+
+
+def test_row_pages_read_only_the_page_and_filters_follow_changes(ws, run):
+    from src.agent.views import HygieneViews
+    v = HygieneViews(run)
+    ref = v.tables()[0]["ref"]
+    page = v.rows(ref, offset=2, limit=3)
+    assert page["total"] == len(ROWS) and [r["excel_row"] for r in page["rows"]] == [4, 5, 6]
+    before = v.rows(ref, only="changed")["total"]
+    untouched = next(r["excel_row"] for r in v.rows(ref)["rows"] if not r["changed"])
+    ws.apply([SetValue(column="Channel", value="Digital", where=RowFilter(rows=[untouched]))], "cs-0001", "x", ws.version(), None)
+    after = HygieneViews(run).rows(ref, only="changed")
+    assert after["total"] == before + 1 and any(r["changed"].get("Channel", {}).get("rule") == "agent" for r in after["rows"])

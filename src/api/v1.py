@@ -77,6 +77,12 @@ def make_router(pipe: Pipeline) -> APIRouter:
     def health() -> dict:
         return {"status": "ok", "active_jobs": pipe.runner.active_count()}
 
+    @r.get("/ready")
+    def ready():
+        """200 when this instance can take work (workspace writable, enough free disk), else 503, with the checks."""
+        ok, checks = pipe.ready()
+        return JSONResponse({"ready": ok, "checks": checks}, status_code=200 if ok else 503)
+
     @r.get("/options")
     def options() -> dict:
         return pipe.options()
@@ -93,6 +99,7 @@ def make_router(pipe: Pipeline) -> APIRouter:
     @r.post("/runs", status_code=201)
     async def create_run(files: list[UploadFile] = File(...), paths: list[str] = Form(default=[]),
                          name: str = Form(default=""), llm: str = Form(default="on")) -> dict:
+        pipe.require_disk()
         saved: list[tuple[str, Path]] = []
         budget = max_total
         try:
@@ -157,6 +164,7 @@ def make_router(pipe: Pipeline) -> APIRouter:
 
     @r.post("/runs/{run_id}/phases/{key}/review")
     async def upload_review(run_id: str, key: str, file: UploadFile = File(...), llm: str = Form(default="")) -> dict:
+        pipe.require_disk()
         tmp = await save_upload(file, max_review, tmp_dir)
         try:
             return pipe.upload_review(run_id, key, tmp, file.filename or "", {"llm": llm} if llm == "off" else None)

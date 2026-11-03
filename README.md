@@ -5,6 +5,15 @@ Start it with `scripts\start.ps1` after `ollama serve`, open <http://127.0.0.1:8
 How it works, the API, decisions and known gaps: [docs/dq_service_implementation_notes.md](docs/dq_service_implementation_notes.md).
 Each phase has its own notes in `docs/dq_[a-d]_implementation_notes.md`; the specs are in `docs/architecture/specs/`.
 
+**Access.** On your own machine nothing else is needed. To let others reach it, set an access token of 16+ characters
+(`DQ_API_TOKEN`, or `service.auth_token` in `config/settings.yaml`) and a non-loopback host: the browser shows a sign-in screen,
+other systems send `Authorization: Bearer <token>`. Without a token the service refuses to listen beyond `127.0.0.1`.
+Also worth setting on a shared server: `STRUCTURE_CALLBACK_HOSTS` (allowed callback hosts), `service.retention_days`
+(delete runs untouched for that long) and `service.min_free_disk_mb` (refuse new runs below it). Health: `GET /api/v1/ready`.
+
+**Development.** `pip install -r requirements-dev.txt`, then `ruff check src tests` and `python -m pytest -q -n auto`;
+in `frontend/`: `npm ci`, `npm run typecheck`, `npx vitest run`, `npm run build`. CI (`.github/workflows/ci.yml`) runs the same.
+
 ---
 
 *Below: the original template README this repository was created from.*

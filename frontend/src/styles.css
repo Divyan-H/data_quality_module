@@ -335,3 +335,7 @@ table.t td.new { color: var(--ok); font-weight: 600; }
 .recipe-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .recipe-list li span { display: block; }
 .recipe-tables { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+
+.signin { max-width: 420px; margin: 48px auto 0; }
+.signin h2 { margin-bottom: 6px; }
+input[type="password"] { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font: inherit; }

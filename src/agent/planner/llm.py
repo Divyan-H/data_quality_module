@@ -14,7 +14,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from src.structure.llm.client import OllamaClient
 
-from ..operations import OPERATION_NAMES, OPERATION_TYPES, SHAPE_OPS, VALUE_OPS, Operation, Plan
+from ..operations import OPERATION_NAMES, OPERATION_TYPES, VALUE_OPS, Operation, Plan
 from .context import PlanningContext
 
 PROMPT_VERSION = "agent-plan/2"
@@ -98,8 +98,10 @@ def schema(ctx: PlanningContext) -> dict:
     op = {"type": "object", "properties": {
         "op": {"type": "string", "enum": allowed_ops(ctx)},
         "table": {"type": "string", "enum": ctx.table_names or [""]}, "into": names, "separator": {"type": "string"},
-        "pattern": {"type": "string"}, "rules": {"type": "array", "items": {"type": "object", "properties": {
-            "when": {"type": "array", "items": condition}, "value": nullable}, "required": ["when", "value"]}},
+        "pattern": {"type": "string"},
+        # one key, two shapes: rule codes for resolve_findings ("D-02"), if / else branches for classify
+        "rules": {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "object", "properties": {
+            "when": {"type": "array", "items": condition}, "value": nullable}, "required": ["when", "value"]}]}},
         "names_to": {"type": "string"}, "values_to": {"type": "string"}, "index": names, "columns_from": col,
         "values_from": col, "agg": {"type": "string", "enum": ["sum", "mean", "first", "count"]}, "allocate": names,
         "method": {"type": "string", "enum": ["equal_integer", "equal", "repeat"]}, "keep_together": names,
@@ -112,7 +114,6 @@ def schema(ctx: PlanningContext) -> dict:
         "descending": {"type": "array", "items": {"type": "boolean"}}, "month": {"type": "string"}, "day": {"type": "string"},
         "unit": {"type": "string", "enum": ["month", "quarter", "year", "week"]},
         "decision": {"type": "string", "enum": ["accept", "reject", "keep", "set", "split"]},
-        "rules": {"type": "array", "items": {"type": "string"}},
         "column": col, "columns": {"type": "array", "items": col}, "from_column": col,
         "value": nullable, "new_value": nullable, "default": nullable,
         "mapping": {"type": "object", "additionalProperties": nullable},
@@ -154,6 +155,8 @@ def to_operations(raw_ops: list[dict], ctx: PlanningContext) -> list:
     typed = _OP_ADAPTER.validate_python(ops)
     for op in typed:                                              # extra fields the op does not take are rejected by
         for field_ in ("column", "from_column"):                  # pydantic (extra="forbid"); names are checked here
+            if op.op == "classify" and field_ == "column":        # classify may write a new column
+                continue
             name = getattr(op, field_, None)
             if name and ctx.find_column(name) is None:
                 raise ValueError(f"unknown column {name}")

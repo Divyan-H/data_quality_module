@@ -1,6 +1,12 @@
 import type { AgentState, CandidateTable, ColumnChoiceTable, EventItem, IssuesView, LlmStatus, PhaseKey, Results, RowsPage, Run, RunListItem, ServiceOptions } from "./types";
 
 const BASE = "/api/v1";
+export const AUTH_EVENT = "dq-auth-required";
+
+export interface SessionState {
+  auth_required: boolean;
+  signed_in: boolean;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -26,6 +32,8 @@ async function parse<T>(res: Response): Promise<T> {
   const err = body?.error;
   if (err) {
     const { code, message, ...extra } = err;
+    // The service asks for its access token: the app shows the sign-in screen (App listens for this event).
+    if (res.status === 401 && code === "auth_required") window.dispatchEvent(new Event(AUTH_EVENT));
     throw new ApiError(res.status, code ?? "error", message ?? res.statusText, extra);
   }
   if (res.status === 422 && Array.isArray(body?.detail)) {
@@ -60,6 +68,9 @@ export interface StartOptions {
 }
 
 export const api = {
+  session: () => request<SessionState>("/session"),
+  signIn: (token: string) => request<SessionState>("/session", json({ token })),
+  signOut: () => request<SessionState>("/session", { method: "DELETE" }),
   options: () => request<ServiceOptions>("/options"),
   llmStatus: (fresh = false) => request<LlmStatus>(`/llm/status${fresh ? "?fresh=true" : ""}`),
   listRuns: () => request<RunListItem[]>("/runs"),

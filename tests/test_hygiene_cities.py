@@ -10,7 +10,7 @@ from src.hygiene.cities import build_index, edit_distance, normalize
 from src.hygiene.config import load_config
 from src.hygiene.pipeline import OUT, clean, run_hygiene
 from src.hygiene.review import apply_upload
-from src.hygiene.rules import RULES, city_names, date_order, expected_columns
+from src.hygiene.rules import city_names, date_order, expected_columns
 from src.hygiene.table import Table
 
 

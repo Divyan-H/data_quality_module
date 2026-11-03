@@ -1,0 +1,12 @@
+# Lint for bugs, not style: pyflakes (unused / undefined names), bugbear (likely mistakes), syntax and runtime errors.
+target-version = "py312"
+line-length = 130
+extend-exclude = ["frontend", "data", "real_data_test", "out_*"]
+
+[lint]
+select = ["F", "B", "E9", "PLE"]
+ignore = [
+  "B905",   # zip() without strict=: lengths are equal by construction throughout (rows of one table)
+  "B008",   # FastAPI's File(...) / Form(...) defaults are the framework's idiom
+  "B007",   # an unused loop variable is style, not a bug
+]

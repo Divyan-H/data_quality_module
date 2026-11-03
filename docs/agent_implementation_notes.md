@@ -34,10 +34,22 @@ Without any model (the command parser, `src/agent/planner/parser.py`):
 Reshaping (unpivot, split rows, aggregate, joins …) is refused in Phase B with a pointer to Phase T, where the same chat
 builds a recipe of such steps (`docs/transformations.md`). Conditions also compare dates: `Date >= 2025-09-09`.
 | `summary` · `help` · `explain D-12` | an answer, numbers computed by code |
+| `save recipe as monthly-fixes` · `use recipe monthly-fixes` · `list recipes` · `show steps` | recipe commands (both phases, below) |
 
 Conditions: `<column> is <v>`, `is not`, `is one of a, b`, `contains`, `starts with`, `is empty`, `> < >= <=`, joined with `and`. Rows are Excel row numbers as the workbook shows them.
 
 Anything else goes to the **local model** (Ollama, loopback only) when it is available: one schema-constrained call whose JSON schema lists the real operations, columns and rule codes, validated into the same typed operations. An invalid answer becomes a question, never a change. Without a model, the chat explains which commands it knows.
+
+## Recipes (Phase B and Phase T)
+
+A recipe is a named list of typed steps in `<workspace>/../recipes/<name>.json`, shared by every run (`src/agent/recipes.py`).
+`use recipe <name>` turns its steps into one ordinary proposal: previewed, applied with a click, undoable.
+
+* **Phase T** saves the run's transformation recipe as it stands.
+* **Phase B** saves the steps of the change-sets applied in this run, in the order they were applied, **without** steps that name
+  Excel rows (`in row 14 set City to Delhi`): row 14 of next month's file is a different row. The save message says how many were left
+  out. `resolve_findings` steps are kept: next month they answer that month's findings of the same rule and column.
+* A recipe belongs to its phase: using a Phase T recipe in Phase B is refused with a message naming the right phase.
 
 ## How it works
 
@@ -98,6 +110,5 @@ Settings (`config/settings.yaml`, `service.agent`): `llm: on|off`, `model` (defa
 ## Not built yet (see `docs/agent_architecture.md` §7–§10)
 
 - Agent support for Phases A, C and D (mark valid, add missing weeks, thresholds, structure overrides). The `Workspace` interface and `Phase.supports_agent` are the extension points.
-- Phase B recipes (replaying value fixes on the next file). Phase T recipes are built: save, list, use.
 - An evaluation set of real analyst instructions and the model comparison.
 - Streaming instead of polling; login and per-user approval records.

@@ -42,17 +42,17 @@ Priorities: **P0** = fix before anyone else uses it, **P1** = fix before product
 * `review: all` is the default (spec default, requested). `near_ties` is about 3x faster. Decide the default from measured accuracy.
 * The model, digest and prompt version are recorded per decision, but there is no regression suite that fails when a model change makes answers worse.
 
-### 1.4 Security (the service has no login)
+### 1.4 Security
 
 | # | Pri | Issue | Fix |
 |---|---|---|---|
-| S1 | P0 for any shared server | **No authentication or authorization** on any endpoint (before_production P-02). The service is bound to `127.0.0.1` to compensate. | Validate a gateway-issued JWT (or mTLS) on every request; map the caller to a tenant and project. |
+| S1 | P0 for any shared server | **Partly fixed (2026-11-03).** A shared access token (`DQ_API_TOKEN` / `service.auth_token`, at least 16 characters) now protects every `/api/`, `/jobs`, `/review/` and docs path: `Authorization: Bearer <token>` for systems, a signed HttpOnly SameSite=Strict session cookie for the browser (sign-in screen). The service refuses to listen on a non-loopback address without a token (`DQ_ALLOW_UNAUTHENTICATED=1` overrides). Still missing: per-user identity and roles. | Validate a gateway-issued JWT (or mTLS) on every request; map the caller to a tenant and project. |
 | S2 | P0 for any shared server | **No tenant separation.** Every run is visible to every caller (`GET /api/v1/runs` lists all). | Add `tenant_id` and `owner` to run state; filter and check on every access. |
 | S3 | P1 | No TLS in the service itself | Terminate TLS at the reverse proxy; require it for the callback URLs too. |
-| S4 | P1 | Job Contract `callback_url` is called with the job token without an allow-list (server-side request forgery risk) | Allow-list callback hosts. |
+| S4 | P1 | **Fixed (2026-11-03).** `callback_url` must be http(s) and, when `STRUCTURE_CALLBACK_HOSTS` is set, on one of its hosts; otherwise `/jobs` answers 400. `/review/precheck` streams its upload with a 200 MB cap (413). | Done; set `STRUCTURE_CALLBACK_HOSTS` on any shared server. |
 | S5 | P1 | Uploaded Office files are parsed in the API host's worker processes; LibreOffice runs unsandboxed with the user's rights | Run workers and LibreOffice in a locked-down container, no network (before_production L-08, L-09). |
 | S6 | P1 | No rate limiting, no per-user quota, no antivirus scan on uploads | Gateway rate limits; quota per tenant; scan at the edge. |
-| S7 | P1 | Client data stays on disk forever; no retention or delete-on-request job | Retention setting, purge job, audit of deletions (before_production L-10, L-11). |
+| S7 | P1 | **Partly fixed (2026-11-03).** `service.retention_days` / `DQ_RETENTION_DAYS`: runs untouched for longer are deleted at start-up and every 6 hours (never a run with a job), each deletion logged. `DELETE /api/v1/runs/{id}` is the delete-on-request. Still missing: a deletion audit store separate from the log. | Audit of deletions (before_production L-10, L-11). |
 | S8 | P1 | `STRUCTURE_HASH_KEY` falls back to a fixed development value | Fail to start in production without a real secret from a secrets manager (L-16). |
 | S9 | P2 | Logs are value-free by rule for Phase A; Phases B–D `pipeline.log` and the review workbooks contain cell values | Decide the rule for B–D; keep logs value-free and put values only in the run folder. |
 
@@ -63,7 +63,7 @@ Priorities: **P0** = fix before anyone else uses it, **P1** = fix before product
 | R1 | P1 | **State and jobs live in one process on one disk**: `state.json` per run, an in-memory job table, worker processes on the same host. A second server instance would not know about the first's jobs. | Move state to a database (PostgreSQL) and jobs to a queue; keep one service instance until then. |
 | R2 | P1 | No structured logging, metrics, tracing or alerts. `src/monitoring/monitoring.py` is still a template stub. | JSON logs with run and job ids; Prometheus metrics (jobs by phase and outcome, durations, LLM calls, fallbacks); alert on failed-job rate and `llm_fallback`. |
 | R3 | P1 | No graceful drain: stopping the service kills running workers | On SIGTERM stop accepting jobs, let running ones finish (bounded), then exit. |
-| R4 | P1 | `data/runs` grows without bound; no disk-space check before a run | Quota and cleanup; refuse uploads when the disk is nearly full. |
+| R4 | P1 | **Fixed (2026-11-03).** Run creation and review uploads answer `507 disk_full` below `service.min_free_disk_mb` (default 1024); retention (S7) bounds growth; `GET /api/v1/ready` reports workspace, disk, jobs, converter and model (503 when not ready). | Per-tenant quota once tenants exist (S2). |
 | R5 | P1 | Jobs are not retried and not queued: the 3rd concurrent job gets `429 busy` | A queue with positions shown in the UI; retry transient failures. |
 | R6 | P2 | The browser polls every 1 s (run state and events) | Server-sent events for events and state changes. |
 | R7 | P2 | The sync config steps hold an HTTP request open for up to 180 s | Make them asynchronous like the phases: return 202, poll the run. |
@@ -76,8 +76,8 @@ Priorities: **P0** = fix before anyone else uses it, **P1** = fix before product
 * **Generated output committed to the working tree:** `out_*` folders (now git-ignored), `real_data_test/results`, `samples/*_issue_catalogue.xlsx`.
 * **`real_data_test/` may contain client data.** It was deliberately left out of git; decide where real test data lives.
 * Phase A code comments cite spec v0.2 section numbers; the notes say v0.3 numbers are authoritative. Renumber.
-* About 20 s of every backend test run is process start-up; the suite takes about 8 minutes. See "Faster tests" below.
-* No lint/format/type-check gate in CI (only tests, the frontend typecheck and build). Add `ruff` and `mypy` (or pyright) to `.github/workflows/ci.yml`.
+* About 20 s of every backend test run is process start-up. `pytest-xdist` is now in `requirements-dev.txt`; CI runs `pytest -n auto`.
+* **Lint gate added (2026-11-03):** `ruff.toml` (pyflakes, bugbear, syntax errors) and `.github/workflows/ci.yml` run `ruff check src tests`, the backend suite in parallel, and the frontend typecheck, tests and build. Still to add: a type checker (mypy or pyright).
 * The front end has no browser-level test (Playwright). Folder drag-and-drop and real file downloads are untested in a browser.
 
 ---

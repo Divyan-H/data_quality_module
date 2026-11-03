@@ -22,6 +22,7 @@ from pydantic import TypeAdapter
 
 from ..errors import AgentError, StaleProposal
 from ..operations import Operation
+from ..recipes import RecipeLibrary
 from ..workspace import Workspace
 from . import engine
 from .describe import step_line, transform_summary
@@ -47,40 +48,6 @@ class FrameTable:
         self.data["_row_id"] = df["_row_id"].to_list() if "_row_id" in df.columns else [None] * df.height
         self.review: list[dict] = []
         self.audit: list[dict] = []
-
-
-class RecipeLibrary:
-    """Saved recipes shared by every run: <workspace>/../recipes/<name>.json."""
-
-    def __init__(self, folder: Path | None):
-        self.folder = Path(folder) if folder else None
-
-    def _path(self, name: str) -> Path:
-        if self.folder is None:
-            raise AgentError("no_library", "Saving recipes is not set up for this service.")
-        slug = safe(name.strip()).lower()
-        if not slug or slug == "table":
-            raise AgentError("bad_name", "Give the recipe a name made of letters or digits.")
-        return self.folder / f"{slug}.json"
-
-    def names(self) -> list[str]:
-        if self.folder is None or not self.folder.exists():
-            return []
-        return sorted(json.loads(p.read_text("utf8")).get("name", p.stem) for p in self.folder.glob("*.json"))
-
-    def save(self, name: str, ops: list[dict], source: str) -> Path:
-        p = self._path(name)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps({"name": name.strip(), "steps": ops, "saved_from": source}, indent=1), encoding="utf8")
-        return p
-
-    def load(self, name: str) -> list:
-        p = self._path(name)
-        if not p.exists():
-            have = self.names()
-            raise AgentError("no_such_recipe", f"There is no saved recipe '{name}'."
-                             + (f" Saved recipes: {', '.join(have)}." if have else " None is saved yet."))
-        return OPS.validate_python(json.loads(p.read_text("utf8"))["steps"])
 
 
 class TransformWorkspace(Workspace):
@@ -258,14 +225,6 @@ class TransformWorkspace(Workspace):
             shutil.copy2(snapshot / "recipe.json", self.recipe_path)
         else:
             self.recipe_path.unlink(missing_ok=True)
-
-    # ── recipes ──────────────────────────────────────────────────────────────
-    def save_recipe(self, name: str, source: str) -> str:
-        steps = [o.model_dump() for o in self.recipe()]
-        if not steps:
-            raise AgentError("empty_recipe", "The recipe has no steps yet; nothing to save.")
-        self.library.save(name, steps, source)
-        return f"Saved the recipe ({len(steps)} step(s)) as '{name.strip()}'. Say \"use recipe {name.strip()}\" on another run to apply it."
 
 
 class TransformViews:

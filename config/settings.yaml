@@ -14,6 +14,12 @@ service:
   llm:
     model: llama3.2:3b      # must be pulled in Ollama (`ollama pull llama3.2:3b`)
     review: all             # all = the model reviews every decision (spec default); near_ties = only where the rules are unsure (faster)
+  # Access: with no token the service must stay on 127.0.0.1 (it refuses to start on another address). To serve it on a
+  # network, set the DQ_API_TOKEN environment variable (16+ characters; better than writing it here): the browser then
+  # asks for it once, scripts send `Authorization: Bearer <token>`.
+  auth_token: null
+  retention_days: null      # delete runs nobody has changed for this many days (null = keep forever); checked every 6 hours
+  min_free_disk_mb: 1024    # refuse new uploads when the workspace disk has less free space than this
   agent:                    # Fix-with-agent chat on the review screens (src/agent, docs/agent_architecture.md)
     llm: on                 # on = the local model plans instructions the built-in command parser does not recognise; off = commands only
     model: null             # null = the model above; a 7B+ instruct model with structured output is recommended (e.g. qwen2.5:7b-instruct)

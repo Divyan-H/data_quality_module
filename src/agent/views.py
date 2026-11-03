@@ -91,49 +91,75 @@ class HygieneViews:
         return {"open": sum(g["count"] for g in out), "resolved": resolved, "resolved_by_agent": by_agent,
                 "groups": out, "tables": self.tables()}
 
+    def _index(self, table: str) -> dict:
+        """Per-table lookups built from the review and audit files once, and rebuilt only when either file changes
+        (an apply or upload rewrites them). Paging through a big table no longer rescans millions of audit entries."""
+        files = [self.out / "needs_review.json", self.out / "remediation_audit.json"]
+        stamp = tuple((f.stat().st_mtime_ns, f.stat().st_size) for f in files)
+        key = (self.out / "_index" / table)
+        with _lock:
+            hit = _cache.get(key)
+            if hit and hit[0] == stamp:
+                return hit[1]
+        items = [i for i in _json(files[0]) if i["table_ref"] == table and i["status"] == "open"]
+        flagged: dict[str, dict[str, dict]] = defaultdict(dict)
+        column_items, value_items = [], []
+        for i in items:
+            if i["row_id"] is None:
+                column_items.append({"rule": i["rule"], "column": i["column"], "why": i["why_flagged"]})
+            elif i.get("scope") == "value":
+                value_items.append((i["column"], i["current_value"], i))   # marked on every cell with that spelling
+            else:
+                flagged[i["row_id"]][i["column"]] = {"rule": i["rule"], "why": i["why_flagged"], "proposed": i.get("proposed_value")}
+        changed: dict[str, dict[str, dict]] = defaultdict(dict)
+        for a in _json(files[1]):
+            if a["table_ref"] == table and a["row_id"] is not None and a["column"] and a["action"] in ("fixed", "analyst_edit"):
+                changed[a["row_id"]][a["column"]] = {"rule": a["rule"], "old": a["old_value"], "note": a.get("note")}
+        index = {"items": items, "flagged": dict(flagged), "changed": dict(changed), "column_items": column_items,
+                 "value_items": value_items}
+        with _lock:
+            _cache[key] = (stamp, index)
+        return index
+
     def rows(self, table: str, offset: int = 0, limit: int = 100, rule: str | None = None, column: str | None = None,
              only: str | None = None) -> dict:
         refs = _json(self.out / "run.json")["tables"]
         if table not in refs:
             raise AgentError("no_such_table", f"There is no table {table} in Phase B's results.")
         limit = max(1, min(limit, MAX_PAGE))
-        df = pl.read_parquet(self.out / "tables" / table.replace(":", "_") / "data.parquet")
-        items = [i for i in _json(self.out / "needs_review.json") if i["table_ref"] == table and i["status"] == "open"]
-        audit = [a for a in _json(self.out / "remediation_audit.json") if a["table_ref"] == table]
-        flagged: dict[str, dict[str, dict]] = defaultdict(dict)
-        column_items = []
-        for i in items:
-            if i["row_id"] is None:
-                column_items.append({"rule": i["rule"], "column": i["column"], "why": i["why_flagged"]})
-            elif i.get("scope") == "value":
-                pass                                               # marked below on every cell with that spelling
-            else:
-                flagged[i["row_id"]][i["column"]] = {"rule": i["rule"], "why": i["why_flagged"],
-                                                     "proposed": i.get("proposed_value")}
-        value_items = [(i["column"], i["current_value"], i) for i in items if i.get("scope") == "value"]
-        changed: dict[str, dict[str, dict]] = defaultdict(dict)
-        for a in audit:
-            if a["row_id"] is not None and a["column"] and a["action"] in ("fixed", "analyst_edit"):
-                changed[a["row_id"]][a["column"]] = {"rule": a["rule"], "old": a["old_value"], "note": a.get("note")}
-        ids = df["_row_id"].to_list()
-        keep = list(range(len(ids)))
-        if rule or column:
-            wanted = {i["row_id"] for i in items if (not rule or i["rule"] == rule) and (not column or i["column"] == column)}
-            for col, val, i in value_items:
-                if (not rule or i["rule"] == rule) and (not column or col == column) and col in df.columns:
-                    wanted |= {ids[n] for n, v in enumerate(df[col].to_list()) if _text(v) == val}
-            keep = [n for n in keep if ids[n] in wanted]
-        if only == "changed":
-            keep = [n for n in keep if ids[n] in changed]
-        elif only == "flagged":
-            keep = [n for n in keep if ids[n] in flagged]
-        page = keep[offset:offset + limit]
-        cols = [c for c in df.columns if c not in SYSTEM]
-        src = df["_source_row"].to_list() if "_source_row" in df.columns else [None] * len(ids)
-        data = {c: df[c].to_list() for c in cols}
+        path = self.out / "tables" / table.replace(":", "_") / "data.parquet"
+        idx = self._index(table)
+        flagged, changed, value_items = idx["flagged"], idx["changed"], idx["value_items"]
+        scan = pl.scan_parquet(path)
+        names = scan.collect_schema().names()
+        cols = [c for c in names if c not in SYSTEM]
+        if rule or column or only:                             # a filter: find the matching row positions first
+            want_cols = ["_row_id"] + sorted({c for c, _, i in value_items if c in names
+                                              and (not rule or i["rule"] == rule) and (not column or c == column)})
+            head = scan.select(want_cols).collect()
+            ids = head["_row_id"].to_list()
+            keep = list(range(len(ids)))
+            if rule or column:
+                wanted = {i["row_id"] for i in idx["items"] if (not rule or i["rule"] == rule) and (not column or i["column"] == column)}
+                for col, val, i in value_items:
+                    if col in head.columns and (not rule or i["rule"] == rule) and (not column or col == column):
+                        wanted |= {ids[n] for n, v in enumerate(head[col].to_list()) if _text(v) == val}
+                keep = [n for n in keep if ids[n] in wanted]
+            if only == "changed":
+                keep = [n for n in keep if ids[n] in changed]
+            elif only == "flagged":
+                keep = [n for n in keep if ids[n] in flagged]
+            total, positions = len(keep), keep[offset:offset + limit]
+            page = (scan.with_row_index("_pos").filter(pl.col("_pos").is_in(positions)).collect()
+                    if positions else scan.head(0).collect())
+        else:                                                  # no filter: read just this page
+            total = scan.select(pl.len()).collect().item()
+            page = scan.slice(offset, limit).collect()
+        ids = page["_row_id"].to_list()
+        src = page["_source_row"].to_list() if "_source_row" in page.columns else [None] * page.height
+        data = {c: page[c].to_list() for c in cols}
         rows = []
-        for n in page:
-            rid = ids[n]
+        for n, rid in enumerate(ids):
             values = {c: _text(data[c][n]) for c in cols}
             flags = dict(flagged.get(rid, {}))
             for col, val, i in value_items:
@@ -141,5 +167,5 @@ class HygieneViews:
                     flags[col] = {"rule": i["rule"], "why": i["why_flagged"], "proposed": i.get("proposed_value")}
             rows.append({"row_id": rid, "excel_row": src[n], "values": values, "changed": changed.get(rid, {}),
                          "flagged": flags})
-        return {"table": table, "columns": cols, "total": len(keep), "offset": offset, "limit": limit, "rows": rows,
-                "column_items": column_items}
+        return {"table": table, "columns": cols, "total": total, "offset": offset, "limit": limit, "rows": rows,
+                "column_items": idx["column_items"]}

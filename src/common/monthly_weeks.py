@@ -72,7 +72,6 @@ def monthly_to_weekly(ds: Dataset, dayfirst: bool = False) -> tuple[Dataset, lis
         return None
     parse = Periods([v for v in ds.data[period] if v is not None], dayfirst)
     measures = numeric_columns(ds, {period})
-    cols = [c for c in ds.columns if c not in NEW_COLUMNS]
     out: dict[str, list] = {c: [] for c in ds.data}
     new: dict[str, list] = {c: [] for c in NEW_COLUMNS}
     log, skipped = [], 0

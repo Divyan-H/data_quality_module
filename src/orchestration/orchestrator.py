@@ -12,8 +12,10 @@ analyst is asked about the LLM. HTTP knows nothing of this; it only calls the me
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from src.common import run_inputs
@@ -34,6 +36,8 @@ LOCKED, READY, RUNNING, REVIEW, ACCEPTED, FAILED, CANCELLED = (
     "locked", "ready", "running", "review", "accepted", "failed", "cancelled")
 RESTARTABLE = {READY, FAILED, CANCELLED}
 SYNC_WAIT_S = 180                         # template creation and config checks are short jobs the request waits for
+PURGE_EVERY_S = 6 * 3600                  # how often runs past the retention period are deleted
+log = logging.getLogger("dq.service")
 
 
 class PipelineError(Exception):
@@ -76,7 +80,11 @@ class Pipeline:
                                           settings.max_concurrent_jobs, settings.job_timeout_min * 60)
         self._sync_locks: dict[str, threading.Lock] = {}
         self.agent = AgentController(self)
+        self._stop = threading.Event()
         self._recover()
+        self.purge_expired()
+        if settings.retention_days:
+            threading.Thread(target=self._purge_loop, name="retention", daemon=True).start()
 
     # ------------------------------------------------------------------ startup
     def _recover(self) -> None:
@@ -432,7 +440,7 @@ class Pipeline:
 
     def columns(self, run_id: str, key: str) -> list[dict]:
         """Numeric columns of the tables a phase will clean, for the start-screen choice of where zero is a valid value."""
-        adapter = self._phase(key)
+        self._phase(key)
         if key != "B":
             raise PipelineError(400, "no_columns", f"Phase {key} has no column choices.")
         st = self.store.load(run_id)
@@ -605,4 +613,67 @@ class Pipeline:
         return {"events": items, "cursor": cursor}
 
     def shutdown(self) -> None:
+        self._stop.set()
         self.runner.shutdown()
+
+    # ------------------------------------------------------------------ operations: disk, readiness, retention
+    def require_disk(self, incoming_bytes: int = 0) -> None:
+        """Refuse new data when the workspace disk would drop below the configured free space: a full disk mid-run
+        leaves half-written outputs, which is worse than a clear 'no room' at the door."""
+        free = shutil.disk_usage(self.settings.workspace).free
+        need = self.settings.min_free_disk_mb * 1024 * 1024 + incoming_bytes
+        if free < need:
+            raise PipelineError(507, "disk_full", f"The service's disk has only {free // 2**20:,} MB free; it keeps at least "
+                                                  f"{self.settings.min_free_disk_mb:,} MB spare. Delete old runs or add space.")
+
+    def ready(self) -> tuple[bool, dict]:
+        """For a load balancer or orchestrator: can this instance take work? The model is reported, not required."""
+        checks: dict = {}
+        ws = Path(self.settings.workspace)
+        try:
+            probe_file = ws / ".ready-probe"
+            probe_file.write_text("ok", encoding="utf8")
+            probe_file.unlink()
+            checks["workspace_writable"] = True
+        except OSError:
+            checks["workspace_writable"] = False
+        free_mb = shutil.disk_usage(ws).free // 2**20 if ws.exists() else 0
+        checks["free_disk_mb"] = free_mb
+        checks["disk_ok"] = free_mb >= self.settings.min_free_disk_mb
+        checks["jobs"] = {"active": self.runner.active_count(), "limit": self.settings.max_concurrent_jobs}
+        checks["legacy_converter"] = find_libreoffice() is not None
+        checks["llm_available"] = probe(self.settings.llm_model).available
+        checks["retention_days"] = self.settings.retention_days
+        return checks["workspace_writable"] and checks["disk_ok"], checks
+
+    def purge_expired(self, now: datetime | None = None) -> list[str]:
+        """Delete runs nobody has touched for `retention_days` (client data should not stay on disk forever, S7).
+        A run with a job in progress is never deleted."""
+        days = self.settings.retention_days
+        if not days:
+            return []
+        cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=days)
+        gone = []
+        for st in self.store.list():
+            try:
+                touched = datetime.fromisoformat(st.get("updated_at") or st.get("created_at"))
+            except (TypeError, ValueError):
+                continue
+            if touched.tzinfo is None:
+                touched = touched.replace(tzinfo=timezone.utc)
+            if touched < cutoff and not st.get("job") and not self.runner.active(st["id"]):
+                try:
+                    self.store.delete(st["id"])
+                    gone.append(st["id"])
+                except (RunNotFound, OSError):
+                    continue
+        if gone:
+            log.info("retention: deleted %d run(s) not changed for %d day(s)", len(gone), days)
+        return gone
+
+    def _purge_loop(self) -> None:
+        while not self._stop.wait(PURGE_EVERY_S):
+            try:
+                self.purge_expired()
+            except Exception:  # noqa: BLE001 - the clean-up must never take the service down
+                log.exception("retention clean-up failed")

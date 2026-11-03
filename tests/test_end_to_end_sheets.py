@@ -4,7 +4,6 @@ process, clean with the KPI rules, check the sheets the client config describes 
 Sheets: Weekly (the planted Phase D sheet), Weekly copy (to drop), Notes (prose), Monthly, Daily.
 """
 import io
-import json
 import random
 import zipfile
 from datetime import date, timedelta
@@ -13,7 +12,6 @@ import openpyxl
 import polars as pl
 import pytest
 
-from conftest import Flow
 
 
 def mixed_book(weekly_xlsx) -> bytes:

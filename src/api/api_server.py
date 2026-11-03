@@ -10,18 +10,33 @@ from __future__ import annotations
 import os
 import tempfile
 import threading
+import urllib.parse
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 
 from src.orchestration.settings import ServiceSettings, load_service_settings
+from src.security import auth
 from src.structure.job import HttpEmitter, run_job
 from src.structure.review_import import precheck
+
+PRECHECK_MAX_MB = 200          # the review workbook the gateway sends for a synchronous check
+
+
+def callback_allowed(url: str) -> bool:
+    """A job callback must be http(s), and when STRUCTURE_CALLBACK_HOSTS is set its host must be on that list (the
+    job token goes to that address, so an open list would let a caller send it, and requests, anywhere)."""
+    parts = urllib.parse.urlparse(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return False
+    allowed = [h.strip().lower() for h in os.environ.get("STRUCTURE_CALLBACK_HOSTS", "").split(",") if h.strip()]
+    return not allowed or parts.hostname.lower() in allowed
 
 
 def create_app(storage_root: str | None = None, service: ServiceSettings | None = None) -> FastAPI:
     root = Path(storage_root or os.environ.get("STRUCTURE_STORAGE_ROOT", "./data/storage"))
     app = FastAPI(title="Data Pipeline service")
+    auth.install(app, service.auth_token if service is not None else os.environ.get("DQ_API_TOKEN"))
     jobs: dict[tuple, dict] = {}           # (job_id, attempt) -> {"state", "cancel", "result"}: POST /jobs is idempotent
     lock = threading.Lock()
 
@@ -32,6 +47,8 @@ def create_app(storage_root: str | None = None, service: ServiceSettings | None 
     @app.post("/jobs", status_code=202)
     def submit(body: dict) -> dict:
         key = (body.get("job_id"), body.get("attempt", 1))
+        if body.get("callback_url") and not callback_allowed(str(body["callback_url"])):
+            raise HTTPException(400, "callback_url is not an allowed http(s) address")
         with lock:
             if key in jobs:
                 return {"job_id": key[0], "state": jobs[key]["state"]}
@@ -56,9 +73,17 @@ def create_app(storage_root: str | None = None, service: ServiceSettings | None 
 
     @app.post("/review/precheck")
     async def review_precheck(request: Request) -> dict:
-        """The gateway's synchronous check of a review workbook sent as the raw request body (no job, no state)."""
+        """The gateway's synchronous check of a review workbook sent as the raw request body (no job, no state).
+        The body is streamed to disk and refused past PRECHECK_MAX_MB, so a huge request cannot fill the memory."""
+        limit, size = PRECHECK_MAX_MB * 1024 * 1024, 0
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-            tmp.write(await request.body())
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > limit:
+                    tmp.close()
+                    os.unlink(tmp.name)
+                    raise HTTPException(413, f"the workbook is larger than {PRECHECK_MAX_MB} MB")
+                tmp.write(chunk)
         try:
             violations = precheck(tmp.name).violations
         finally:
@@ -105,5 +130,12 @@ def start_api_server(api_config: dict) -> None:
     """Start the API server with the `api` section of the settings (host, port)."""
     import uvicorn
     service = load_service_settings()
-    uvicorn.run(create_app(api_config.get("storage_root"), service), host=api_config.get("host", "127.0.0.1"),
-                port=int(api_config.get("port", 8000)))
+    host = api_config.get("host", "127.0.0.1")
+    try:
+        auth.check_token(service.auth_token)
+    except auth.TokenError as e:
+        raise SystemExit(str(e)) from e
+    if not auth.is_loopback(host) and not service.auth_token and os.environ.get("DQ_ALLOW_UNAUTHENTICATED") != "1":
+        raise SystemExit(f"Refusing to listen on {host} without an access token: anyone who can reach the port could read "
+                         "and delete client data. Set DQ_API_TOKEN (16+ characters), or bind to 127.0.0.1.")
+    uvicorn.run(create_app(api_config.get("storage_root"), service), host=host, port=int(api_config.get("port", 8000)))

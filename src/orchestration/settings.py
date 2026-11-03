@@ -10,6 +10,9 @@
         model: llama3.2:3b
         review: near_ties           near_ties = ask the model only where the rules are unsure; all = ask on every decision
       hygiene_defaults_off: [D-14, D-27]  automatic fixes that start switched off in the UI (see docs/decisions/decision_logs.md)
+      auth_token: null              access token for the API (16+ chars); prefer the DQ_API_TOKEN environment variable
+      retention_days: null          delete runs not changed for this many days (null = keep forever)
+      min_free_disk_mb: 1024        refuse new uploads when the workspace disk has less free space than this
       agent:
         llm: on                     on = the local model plans instructions the command parser does not recognise
         model: qwen2.5:7b-instruct  the model the Fix-with-agent chat uses (default: llm.model)
@@ -39,6 +42,9 @@ class ServiceSettings:
     hygiene_defaults_off: list[str] = field(default_factory=lambda: ["D-14", "D-27"])
     agent_llm: bool = True
     agent_model: str | None = None              # None = llm_model
+    auth_token: str | None = None               # None = no access control (the service must stay on 127.0.0.1)
+    retention_days: int | None = None
+    min_free_disk_mb: int = 1024
     frontend_dir: Path = REPO_ROOT / "frontend" / "dist"
     cors_origins: list[str] = field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
 
@@ -59,6 +65,11 @@ def load_service_settings(path: str | None = None, **overrides) -> ServiceSettin
     llm = raw.get("llm") or {}
     s.llm_model = os.environ.get("DQ_LLM_MODEL") or llm.get("model") or s.llm_model
     s.llm_review = llm.get("review") or s.llm_review
+    s.auth_token = os.environ.get("DQ_API_TOKEN") or raw.get("auth_token") or None
+    if os.environ.get("DQ_RETENTION_DAYS") or raw.get("retention_days"):
+        s.retention_days = int(os.environ.get("DQ_RETENTION_DAYS") or raw["retention_days"])
+    if "min_free_disk_mb" in raw:
+        s.min_free_disk_mb = int(raw["min_free_disk_mb"])
     agent = raw.get("agent") or {}
     if "llm" in agent:
         s.agent_llm = agent["llm"] not in (False, "off", "false", 0)

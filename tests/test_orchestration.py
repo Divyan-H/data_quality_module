@@ -13,7 +13,7 @@ from src.orchestration.phases import ORDER, PHASES, findings, following, previou
 from src.orchestration.phases.structure import collect_inputs, structure_config
 from src.orchestration.runner import JobRunner, kill_orphan
 from src.orchestration.settings import load_service_settings
-from src.storage.run_store import RunStore
+from src.storage.run_store import RunNotFound, RunStore
 
 from conftest import Flow
 
@@ -271,6 +271,6 @@ def test_bundle_of_a_run_with_no_results_is_empty_but_valid(service_settings, we
 
 def test_a_store_outside_the_workspace_cannot_be_reached_through_the_pipeline(service_settings):
     p = Pipeline(service_settings)
-    with pytest.raises(Exception):
+    with pytest.raises(RunNotFound):                   # refused as an id, never resolved as a path
         p.view("../../etc")
     assert isinstance(p.store, RunStore)

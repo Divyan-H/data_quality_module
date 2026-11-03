@@ -355,9 +355,12 @@ def scale(tables: Tables, op: Scale, fx: Effect) -> None:
                 fx.note(f"{bad} cell(s) of {col} in {name} are not numbers and were left as they are.")
             fx.cells += count_true(df, m & n.is_not_null())
             scaled = (n * op.factor).round(10)
-            df = df.with_columns(pl.when(m & n.is_not_null()).then(scaled).otherwise(n if bad == 0 else None).alias(col)) \
-                if bad == 0 else df.with_columns(pl.when(m & n.is_not_null()).then(scaled.cast(pl.String))
-                                                 .otherwise(pl.col(col).cast(pl.String)).alias(col))
+            if bad == 0:                                   # a number column stays a number column
+                df = whole(df.with_columns(pl.when(m).then(scaled).otherwise(n).alias(col)), [col])
+            else:                                          # mixed: scaled numbers written as plain text, the rest kept
+                text = scaled.map_elements(render, return_dtype=pl.String, skip_nulls=True)
+                df = df.with_columns(pl.when(m & n.is_not_null()).then(text)
+                                     .otherwise(pl.col(col).map_elements(render, return_dtype=pl.String, skip_nulls=True)).alias(col))
             fx.focus = name
         tables[name] = df
 

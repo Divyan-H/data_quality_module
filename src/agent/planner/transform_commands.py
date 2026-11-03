@@ -264,7 +264,6 @@ class TransformCommands:
         rename = self._pairs(m.group("map")) if m.group("map") else {}
         conds = []
         if m.group("cond"):
-            saved = self.ctx
             conds = self.conditions(m.group("cond"))
         return Plan(ops=[AppendRows(table=dst, source=src, rename=rename, where=conds)])
 

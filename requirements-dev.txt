@@ -1,0 +1,4 @@
+# Development and CI only: lint and parallel tests (`python -m pytest -n auto`).
+-r requirements.txt
+ruff
+pytest-xdist

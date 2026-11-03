@@ -17,6 +17,7 @@ import re
 from .errors import AgentError
 from .operations import Plan
 from .planner import Planner, PlanningContext
+from .recipes import RecipeLibrary, replayable
 from .store import AgentStore, ChangeSet, now
 from .workspace import Workspace
 
@@ -25,8 +26,9 @@ UNDO_DEPTH = 10                                   # applied change-sets that kee
 
 
 class AgentService:
-    def __init__(self, workspace: Workspace, store: AgentStore, planner: Planner):
+    def __init__(self, workspace: Workspace, store: AgentStore, planner: Planner, library: RecipeLibrary | None = None):
         self.ws, self.store, self.planner = workspace, store, planner
+        self.library = library or getattr(workspace, "library", None) or RecipeLibrary(None)
 
     # ── read ─────────────────────────────────────────────────────────────────
     def state(self) -> dict:
@@ -85,30 +87,43 @@ class AgentService:
         return {"messages": [user.model_dump(), reply.model_dump()], "changeset": {**cs.brief(), "preview": preview}}
 
     def _recipe_command(self, text: str) -> Plan | None:
-        """Recipe commands (Phase T): save the steps to the library, list it, show the steps, or use a saved recipe
-        (its steps become an ordinary proposal: previewed, applied with a click)."""
+        """Recipe commands: save this run's steps to the library, list it, show the steps, or use a saved recipe (its
+        steps become an ordinary proposal: previewed, applied with a click). Phase T saves its transformation recipe;
+        Phase B saves the value fixes applied in this run that do not name Excel rows."""
         t = " ".join(text.strip().rstrip(".!").split())
-        m = re.fullmatch(r"(?:save|store|keep)\s+(?:this\s+|the\s+)?recipe\s+(?:as|named|called)\s+[\"']?(.+?)[\"']?", t, re.I)
-        saving, using = m, re.fullmatch(r"(?:use|load|apply|run|reuse)\s+(?:the\s+)?(?:saved\s+)?recipe\s+[\"']?(.+?)[\"']?", t, re.I)
+        saving = re.fullmatch(r"(?:save|store|keep)\s+(?:this\s+|the\s+|these\s+)?(?:recipe|fixes|steps)\s+(?:as|named|called)\s+[\"']?(.+?)[\"']?", t, re.I)
+        using = re.fullmatch(r"(?:use|load|apply|run|reuse)\s+(?:the\s+)?(?:saved\s+)?recipe\s+[\"']?(.+?)[\"']?", t, re.I)
         listing = re.fullmatch(r"(?:list|show)\s+(?:the\s+|my\s+|all\s+)?(?:saved\s+)?recipes", t, re.I)
         showing = re.fullmatch(r"(?:show|list|what are)\s+(?:the\s+|my\s+)?(?:recipe|steps)(?:\s+so\s+far)?", t, re.I)
         if not (saving or using or listing or showing):
             return None
-        if not getattr(self.ws, "supports_recipes", False):
-            return Plan(answer="Recipes are for Phase T (Transformations): the steps that reshape the checked data.")
+        from . import describe
+        phase = self.ws.phase
+        if phase == "T":
+            steps, skipped = self.ws.recipe(), []
+        else:
+            applied = sorted((c for c in self.store.all() if c.status == "applied"), key=lambda c: (c.applied_at or "", c.id))
+            steps, skipped = replayable([op for c in applied for op in c.operations()])
         if saving:
-            return Plan(answer=self.ws.save_recipe(saving.group(1), self.store.phase))
+            if not steps:
+                raise AgentError("empty_recipe", "There are no steps to save yet"
+                                 + (" (steps that name Excel rows are left out: they fit this file only)." if skipped else "."))
+            name = saving.group(1).strip()
+            self.library.save(name, [op.model_dump() for op in steps], self.store.phase, phase=phase)
+            note = f" {len(skipped)} step(s) naming Excel rows were left out: they fit this file only." if skipped else ""
+            return Plan(answer=f"Saved the recipe ({len(steps)} step(s)) as '{name}'.{note} Say \"use recipe {name}\" "
+                               "on another run to apply it.")
         if listing:
-            names = self.ws.library.names()
-            return Plan(answer=("Saved recipes: " + ", ".join(names) + ". Say \"use recipe <name>\" to apply one.")
-                        if names else "No recipe is saved yet. Build the steps, then say \"save recipe as <name>\".")
+            entries = [e for e in self.library.entries() if e["phase"] == phase]
+            return Plan(answer=("Saved recipes for this phase: " + ", ".join(f"{e['name']} ({e['steps']} step(s))" for e in entries)
+                                + ". Say \"use recipe <name>\" to apply one.") if entries else
+                        "No recipe is saved for this phase yet. Apply some changes, then say \"save recipe as <name>\".")
         if showing:
-            steps = self.ws.recipe()
-            from . import describe
-            return Plan(answer=("The recipe so far:\n" + "\n".join(f"{n}. {describe.operation(op)}" for n, op in enumerate(steps, 1)))
-                        if steps else "The recipe has no steps yet.")
-        ops = self.ws.library.load(using.group(1))
-        return Plan(ops=ops, source="rules")
+            lines = [f"{n}. {describe.operation(op)}" for n, op in enumerate(steps, 1)]
+            extra = f"\n({len(skipped)} applied step(s) name Excel rows and would not be saved.)" if skipped else ""
+            return Plan(answer=("The steps a saved recipe would hold:\n" + "\n".join(lines) + extra) if lines else
+                        "No replayable steps yet." + extra)
+        return Plan(ops=self.library.load(using.group(1), phase), source="rules")
 
     # ── apply ────────────────────────────────────────────────────────────────
     def _proposal(self, cs_id: str) -> ChangeSet:

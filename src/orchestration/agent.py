@@ -41,7 +41,9 @@ def build_service(phase, ctx, params: dict):
     from src.structure.llm.client import OllamaClient
     llm = params.get("agent_llm") or {}
     planner = Planner(LlmPlanner(OllamaClient(None, llm["model"], None)) if llm.get("mode") == "on" else None)
-    return AgentService(phase.agent_workspace(ctx, params), AgentStore(ctx.run, phase.key), planner)
+    from src.agent.recipes import RecipeLibrary
+    return AgentService(phase.agent_workspace(ctx, params), AgentStore(ctx.run, phase.key), planner,
+                        RecipeLibrary(params.get("recipes_dir")))
 
 
 def run_action(phase, ctx, action: str, params: dict) -> dict:
