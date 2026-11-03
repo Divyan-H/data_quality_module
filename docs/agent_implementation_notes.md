@@ -1,6 +1,7 @@
 # Fix-with-agent: implementation notes
 
-**Status:** built for Phase B (cell hygiene), Nov 2026. Design and roadmap: `docs/agent_architecture.md`.
+**Status:** built for Phase B (cell hygiene) and Phase T (Transformations), Nov 2026. Design and roadmap:
+`docs/agent_architecture.md`. Phase T, its operations and the Porter-script mapping: `docs/transformations.md`.
 
 ## What the analyst sees
 
@@ -27,6 +28,11 @@ Without any model (the command parser, `src/agent/planner/parser.py`):
 | `Spend is in thousands` · `divide Revenue by 100` · `multiply Spend by 1.18` | `scale` |
 | `add column Revenue = Orders * AOV` · `add column Source with value Client` · `add column Medium from Channel: TV = Offline, others = Online` | `add_column` (formula, constant, or lookup) |
 | `rename column Amt to Amount` · `remove rows where Status is Test` · `remove rows 4, 7` · `split the multi-value cells in City` | `rename_column`, `remove_rows`, `resolve_findings(split)` |
+| `split Full Name into First and Last [on comma]` | `split_column` (new columns, checked by Phase B's rules) |
+| `set Tier to Gold if Spend > 100000, Silver if Spend > 50000, else Bronze` | `classify` (if / else) |
+
+Reshaping (unpivot, split rows, aggregate, joins …) is refused in Phase B with a pointer to Phase T, where the same chat
+builds a recipe of such steps (`docs/transformations.md`). Conditions also compare dates: `Date >= 2025-09-09`.
 | `summary` · `help` · `explain D-12` | an answer, numbers computed by code |
 
 Conditions: `<column> is <v>`, `is not`, `is one of a, b`, `contains`, `starts with`, `is empty`, `> < >= <=`, joined with `and`. Rows are Excel row numbers as the workbook shows them.
@@ -92,7 +98,6 @@ Settings (`config/settings.yaml`, `service.agent`): `llm: on|off`, `model` (defa
 ## Not built yet (see `docs/agent_architecture.md` §7–§10)
 
 - Agent support for Phases A, C and D (mark valid, add missing weeks, thresholds, structure overrides). The `Workspace` interface and `Phase.supports_agent` are the extension points.
-- Recipes: saving an applied change-set per `layout_id` and replaying it on the next file.
-- The transformation step (unpivot, city split, OOH netting, lookup joins) for the Porter scripts.
+- Phase B recipes (replaying value fixes on the next file). Phase T recipes are built: save, list, use.
 - An evaluation set of real analyst instructions and the model comparison.
 - Streaming instead of polling; login and per-user approval records.

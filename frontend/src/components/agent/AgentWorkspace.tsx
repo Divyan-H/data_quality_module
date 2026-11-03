@@ -4,6 +4,7 @@ import type { AgentState, IssueGroup, IssuesView, Phase, PhaseKey, Run } from ".
 import { Alert, DownloadLink } from "../ui";
 import { ChatPanel } from "./ChatPanel";
 import { groupKey, IssueList } from "./IssueList";
+import { RecipePanel } from "./RecipePanel";
 import { dataVersion } from "./logic";
 import { SheetView } from "./SheetView";
 
@@ -92,15 +93,18 @@ export function AgentWorkspace({ run, phase, nextKey, onClose, onAccept, onChang
   }
 
   const review = phase.artifacts.find((a) => a.primary);
+  const transform = phase.key === "T";
   const accepted = phase.status === "accepted";
   const downstream = run.phases.some((p) => p.key > phase.key && p.status !== "locked" && p.status !== "ready");
   return (
     <div className="agent-ws">
       <div className="agent-top">
         <div>
-          <h2>Fix with agent · Phase {phase.key}</h2>
+          <h2>{transform ? "Transform with agent · Phase T" : `Fix with agent · Phase ${phase.key}`}</h2>
           <p className="muted small">
-            Say what to change. Each instruction is previewed; Apply makes the change, logs it in the audit and re-checks the data.
+            {transform
+              ? "Say how to reshape the data. Each step is previewed on the current tables; Apply adds it to the recipe, which runs again whenever the checked data changes."
+              : "Say what to change. Each instruction is previewed; Apply makes the change, logs it in the audit and re-checks the data."}
             {downstream ? " Applying a change discards the later phases, which then run again." : ""}
           </p>
         </div>
@@ -115,15 +119,19 @@ export function AgentWorkspace({ run, phase, nextKey, onClose, onAccept, onChang
       {error && <Alert kind="error">{error}</Alert>}
       {phase.agent_error && !working && <Alert kind="warn" title="The last change was not applied">{phase.agent_error.message}</Alert>}
       <div className="agent-grid">
-        <IssueList
-          issues={issues}
-          selected={focus ? groupKey(focus) : null}
-          onSelect={setFocus}
-          onSuggest={(t) => setDraft(t)}
-          disabled={busy}
-        />
+        {transform ? (
+          <RecipePanel issues={issues} disabled={busy} onSuggest={(t) => setDraft(t)} />
+        ) : (
+          <IssueList
+            issues={issues}
+            selected={focus ? groupKey(focus) : null}
+            onSelect={setFocus}
+            onSuggest={(t) => setDraft(t)}
+            disabled={busy}
+          />
+        )}
         {issues ? (
-          <SheetView runId={run.id} phase={phase.key} tables={issues.tables} focus={focus} version={version} onClearFocus={() => setFocus(null)} />
+          <SheetView runId={run.id} phase={phase.key} tables={issues.tables} focus={focus} version={version} onClearFocus={() => setFocus(null)} plain={transform} />
         ) : (
           <div className="agent-sheet"><p className="muted small" style={{ padding: 14 }}>Loading the data…</p></div>
         )}
@@ -138,6 +146,7 @@ export function AgentWorkspace({ run, phase, nextKey, onClose, onAccept, onChang
           onApply={apply}
           onDiscard={discard}
           onUndo={undo}
+          phase={phase.key}
         />
       </div>
     </div>

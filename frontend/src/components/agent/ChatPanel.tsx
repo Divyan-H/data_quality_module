@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import type { AgentMessage, AgentState, ChangeSetView } from "../../types";
+import type { AgentMessage, AgentState, ChangePreview, ChangeSetView, PhaseKey, TransformPreview } from "../../types";
 import { show, STARTERS, statusLabel } from "./logic";
 
 export function ProposalCard({ cs, busy, onApply, onDiscard, onAgain }: {
@@ -10,7 +10,10 @@ export function ProposalCard({ cs, busy, onApply, onDiscard, onAgain }: {
   onAgain: () => void;
 }) {
   const st = statusLabel(cs);
-  const p = cs.preview;
+  if ("kind" in cs.preview && cs.preview.kind === "transform") {
+    return <TransformCard cs={cs} p={cs.preview} st={st} busy={busy} onApply={onApply} onDiscard={onDiscard} onAgain={onAgain} />;
+  }
+  const p = cs.preview as ChangePreview;
   const samples = p.operations.flatMap((o) => o.effect.samples).slice(0, 8);
   const unmatched = p.operations.flatMap((o) => o.effect.unmatched);
   const notes = p.operations.flatMap((o) => o.effect.notes);
@@ -67,6 +70,56 @@ export function ProposalCard({ cs, busy, onApply, onDiscard, onAgain }: {
   );
 }
 
+/** A Phase T proposal: each step with rows before -> after per table, notes, and the first rows of the result. */
+function TransformCard({ cs, p, st, busy, onApply, onDiscard, onAgain }: {
+  cs: ChangeSetView; p: TransformPreview; st: ReturnType<typeof statusLabel>; busy: boolean;
+  onApply: () => void; onDiscard: () => void; onAgain: () => void;
+}) {
+  const last = [...p.operations].reverse().find((o) => o.effect.sample)?.effect.sample ?? null;
+  const notes = p.operations.flatMap((o) => o.effect.notes);
+  const unmatched = p.operations.flatMap((o) => o.effect.unmatched);
+  return (
+    <div className={`proposal ${cs.status}`} aria-label={`Change ${cs.id}`}>
+      <div className="proposal-head">
+        <b>{cs.id}</b>
+        <span className={`chip ${st.tone}`}>{st.text}</span>
+        <span className="chip">{p.operations.length === 1 ? "1 step" : `${p.operations.length} steps`}</span>
+      </div>
+      <ol className="proposal-ops">
+        {p.operations.map((o, i) => (
+          <li key={i}><span>{o.text}</span> <span className="muted">{o.summary}</span></li>
+        ))}
+      </ol>
+      {last && last.columns.length > 0 && (
+        <div className="proposal-samples">
+          <table className="t compact">
+            <thead><tr>{last.columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+            <tbody>
+              {last.rows.map((r, i) => <tr key={i}>{r.map((v, j) => <td key={j}>{show(v)}</td>)}</tr>)}
+            </tbody>
+          </table>
+          <p className="small muted" style={{ padding: "4px 8px" }}>First rows of {last.table} after the step.</p>
+        </div>
+      )}
+      {unmatched.length > 0 && <p className="small warn-text">Not found / not matched: {unmatched.slice(0, 8).map((u) => show(u)).join(", ")}{unmatched.length > 8 ? " …" : ""}</p>}
+      {notes.map((n, i) => <p key={i} className="small muted">{n}</p>)}
+      {cs.status === "proposed" && (
+        <div className="row">
+          <button className="btn primary sm" onClick={onApply} disabled={busy}>Apply and add to the recipe</button>
+          <button className="btn sm" onClick={onDiscard} disabled={busy}>Discard</button>
+        </div>
+      )}
+      {cs.status === "stale" && (
+        <div className="row">
+          <span className="small muted">The tables changed after this preview.</span>
+          <button className="btn sm" onClick={onAgain} disabled={busy}>Preview again</button>
+        </div>
+      )}
+      {cs.status === "failed" && cs.error && <p className="small bad-text">{cs.error}</p>}
+    </div>
+  );
+}
+
 function Bubble({ m, state, busy, onApply, onDiscard, onAgain }: {
   m: AgentMessage;
   state: AgentState;
@@ -87,7 +140,7 @@ function Bubble({ m, state, busy, onApply, onDiscard, onAgain }: {
   );
 }
 
-export function ChatPanel({ state, busy, sending, working, draft, setDraft, onSend, onApply, onDiscard, onUndo }: {
+export function ChatPanel({ state, busy, sending, working, draft, setDraft, onSend, onApply, onDiscard, onUndo, phase = "B" }: {
   state: AgentState | null;
   busy: boolean;
   sending: boolean;
@@ -98,6 +151,7 @@ export function ChatPanel({ state, busy, sending, working, draft, setDraft, onSe
   onApply: (cs: string) => void;
   onDiscard: (cs: string) => void;
   onUndo: () => void;
+  phase?: PhaseKey;
 }) {
   const end = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -141,9 +195,20 @@ export function ChatPanel({ state, busy, sending, working, draft, setDraft, onSe
         {count === 0 && (
           <div className="msg agent answer">
             <div className="msg-text">
-              Tell me what to change, one instruction at a time. I show a preview first; nothing changes until you click Apply.
-              {"\n"}Try: “accept all date fixes except row 14”, “Head Office is Bangalore”, “Spend is in thousands”,
-              “add column Source with value Client”. Pick an issue on the left for ready-made answers.
+              {phase === "T" ? (
+                <>
+                  Tell me how to reshape the tables, one step at a time. I show the result first; Apply adds the step to the recipe.
+                  {"\n"}Try: “unpivot Day 1 to Day 31 into rows as Day and Value”, “split City into rows sharing Usage”,
+                  “sum Impressions, Clicks by day, channel, network”, “look up CURRENT_AOV from AOV matching Date, City”,
+                  “net next-month negatives in Spend by Month per Site”. Say “help” for the full list.
+                </>
+              ) : (
+                <>
+                  Tell me what to change, one instruction at a time. I show a preview first; nothing changes until you click Apply.
+                  {"\n"}Try: “accept all date fixes except row 14”, “Head Office is Bangalore”, “Spend is in thousands”,
+                  “add column Source with value Client”. Pick an issue on the left for ready-made answers.
+                </>
+              )}
             </div>
           </div>
         )}
@@ -161,7 +226,7 @@ export function ChatPanel({ state, busy, sending, working, draft, setDraft, onSe
         <textarea
           ref={input}
           aria-label="Instruction for the agent"
-          placeholder="e.g. set Region to APAC where Country is India"
+          placeholder={phase === "T" ? "e.g. sum Clicks, Installs by day, channel" : "e.g. set Region to APAC where Country is India"}
           value={draft}
           rows={2}
           maxLength={2000}

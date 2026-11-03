@@ -1,5 +1,5 @@
-export type PhaseKey = "A" | "B" | "C" | "D";
-export const PHASE_KEYS: PhaseKey[] = ["A", "B", "C", "D"];
+export type PhaseKey = "A" | "B" | "C" | "D" | "T";
+export const PHASE_KEYS: PhaseKey[] = ["A", "B", "C", "D", "T"];
 
 export type Status = "locked" | "ready" | "running" | "review" | "accepted" | "failed" | "cancelled";
 
@@ -50,6 +50,9 @@ export interface Phase {
   describes: string;
   uses_llm: boolean;
   needs_config: boolean;
+  /** May be skipped (Phase T). */
+  optional?: boolean;
+  supports_agent?: boolean;
   review_name: string;
   status: Status;
   attempt: number;
@@ -167,6 +170,25 @@ export interface ChangePreview {
   changes_anything: boolean;
 }
 
+/** A Phase T step's effect: rows and columns per table, notes, and the first rows of the result. */
+export interface TransformEffect {
+  tables: { table: string; rows_before: number | null; rows_after: number | null; new?: boolean; dropped?: boolean; columns_added: string[]; columns_removed: string[] }[];
+  cells: number;
+  notes: string[];
+  unmatched: string[];
+  unmatched_total: number;
+  sample: { table: string; columns: string[]; rows: (string | null)[][] } | null;
+}
+
+export interface TransformPreview {
+  kind: "transform";
+  operations: { text: string; summary: string; effect: TransformEffect }[];
+  summary: string;
+  steps_before: number;
+  tables_after: { name: string; rows: number; columns: number }[];
+  changes_anything: boolean;
+}
+
 export type ChangeSetStatus = "proposed" | "applied" | "discarded" | "undone" | "stale" | "failed";
 
 export interface ChangeSetView {
@@ -179,7 +201,7 @@ export interface ChangeSetView {
   applied_at: string | null;
   undone_at: string | null;
   error: string | null;
-  preview: ChangePreview;
+  preview: ChangePreview | TransformPreview;
 }
 
 export interface AgentState {
@@ -218,12 +240,30 @@ export interface AgentTable {
   columns: string[];
 }
 
+export interface RecipeStep {
+  step: number;
+  text: string;
+  summary: string;
+  changeset: string | null;
+  notes: string[];
+}
+
 export interface IssuesView {
   open: number;
   resolved: number;
   resolved_by_agent: number;
   groups: IssueGroup[];
   tables: AgentTable[];
+  /** Phase T: the recipe's steps and the step that failed, if any. */
+  steps?: RecipeStep[];
+  failed?: { step: number; text: string; message: string } | null;
+}
+
+export interface SummaryT {
+  tables: { name: string; rows: number; columns: number; made_here: boolean }[];
+  inputs: { name: string; source_file: string | null; sheet: string | null }[];
+  steps: { step: number; text: string; summary: string; notes: string[] }[];
+  failed: { step: number; text: string; message: string } | null;
 }
 
 export interface CellState {

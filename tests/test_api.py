@@ -41,7 +41,7 @@ def finished(tmp_path_factory, weekly_files):
 def test_all_four_phases_complete_and_the_run_is_complete(finished):
     f, rid = finished
     v = f.view(rid)
-    assert [p["status"] for p in v["phases"]] == ["accepted"] * 4 and v["complete"]
+    assert [p["status"] for p in v["phases"]] == ["accepted"] * 4 + ["ready"] and v["complete"]   # T is optional
     assert v["job"] is None
 
 
@@ -164,7 +164,7 @@ def test_restarting_a_phase_discards_the_later_ones(flow, weekly_files):
         flow.accept(rid, key)
     flow.start(rid, "A", {"llm": "off", "restart": True})
     flow.wait(rid, "A")
-    assert [p["status"] for p in flow.view(rid)["phases"]] == ["review", "locked", "locked", "locked"]
+    assert [p["status"] for p in flow.view(rid)["phases"]] == ["review", "locked", "locked", "locked", "locked"]
     assert not (flow.c.app.state.pipeline.store.path(rid) / "work" / "phase_b_hygiene").exists()
 
 
@@ -619,7 +619,7 @@ def test_the_run_list_shows_progress_per_phase(flow, weekly_files, client):
     rid = flow.create([("weekly.xlsx", weekly_files["data"])], name="listed")
     flow.run_phase(rid, "A", {"llm": "off"})
     row = next(r for r in client.get("/api/v1/runs").json() if r["id"] == rid)
-    assert row["name"] == "listed" and row["phases"] == {"A": "review", "B": "locked", "C": "locked", "D": "locked"}
+    assert row["name"] == "listed" and row["phases"] == {"A": "review", "B": "locked", "C": "locked", "D": "locked", "T": "locked"}
     assert row["files"] == 1 and not row["running"] and not row["complete"]
 
 

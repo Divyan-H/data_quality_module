@@ -105,6 +105,10 @@ class AgentController:
         if st["phases"][key]["status"] not in (REVIEW, ACCEPTED):
             raise PipelineError(409, "not_reviewable", f"Phase {key} has no results to work on yet.")
 
+    def recipes_dir(self) -> str:
+        """Saved transformation recipes, shared by every run (beside the runs folder, not inside it)."""
+        return str(Path(self.pipe.settings.workspace).parent / "recipes")
+
     def _llm_params(self) -> dict:
         s = self.pipe.settings
         model = s.agent_model or s.llm_model
@@ -160,7 +164,7 @@ class AgentController:
         self._adapter(key)
         st = self.pipe.store.load(run_id)
         self._usable(st, key)
-        params = {**st["phases"][key]["params"], "text": text, "agent_llm": self._llm_params()}
+        params = {**st["phases"][key]["params"], "text": text, "agent_llm": self._llm_params(), "recipes_dir": self.recipes_dir()}
         outcome = self.pipe._sync_job(run_id, key, "agent_message", params)
         if not outcome.get("ok"):
             raise PipelineError(HTTP.get(outcome.get("code"), 500 if outcome.get("kind") == "crash" else 400),
@@ -173,7 +177,7 @@ class AgentController:
         with self.pipe.store.edit(run_id) as st:
             self._usable(st, key)
             ph = st["phases"][key]
-            params = {**ph["params"], **extra, "agent_llm": {"mode": "off"}}
+            params = {**ph["params"], **extra, "agent_llm": {"mode": "off"}, "recipes_dir": self.recipes_dir()}
             try:
                 job = self.pipe.runner.launch(run_id, key, action, params)
             except Busy as e:

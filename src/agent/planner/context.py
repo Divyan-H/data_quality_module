@@ -72,9 +72,34 @@ def rules_for_words(text: str) -> list[str]:
 
 
 class PlanningContext:
-    def __init__(self, tables: list[Table]):
+    def __init__(self, tables: list[Table], phase: str = "B"):
         self.tables = tables
+        self.phase = phase                      # "B": value changes only; "T": reshaping too
         self._value_index: dict[str, dict[str, set[str]]] | None = None
+
+    # ── tables ───────────────────────────────────────────────────────────────
+    @property
+    def table_names(self) -> list[str]:
+        return [t.ref for t in self.tables]
+
+    def find_table(self, name: str) -> str | None:
+        """A table's name (its ref) from what the analyst calls it: its name, sheet or file, or part of one."""
+        from src.hygiene.cities import normalize
+        n = normalize(name.strip().strip("'\""))
+        if not n:
+            return None
+        for exact in (True, False):
+            hits = [t.ref for t in self.tables
+                    if any(x and (normalize(x) == n if exact else n in normalize(x)) for x in (t.ref, t.sheet, t.source_file))]
+            if len(hits) == 1:
+                return hits[0]
+            if len(hits) > 1:
+                return None
+        return None
+
+    def columns_of(self, table: str | None) -> list[str]:
+        t = next((t for t in self.tables if t.ref == table), None)
+        return list(t.cols) if t is not None else self.columns
 
     # ── columns ──────────────────────────────────────────────────────────────
     @property
@@ -160,9 +185,9 @@ class PlanningContext:
                     top = Counter(v for v in t.data[c] if v is not None).most_common(TOP_VALUES)
                     entry["top_values"] = [v for v, _ in top]
                 cols.append(entry)
-            tables.append({"table": label(t), "rows": len(t.data["_row_id"]), "columns": cols})
+            tables.append({"table": t.ref if self.phase == "T" else label(t), "rows": len(t.data["_row_id"]), "columns": cols})
         groups = [g.as_dict() for g in self.finding_groups()[:40]]
         if privacy != "full":
             for g in groups:
                 g.pop("examples", None)
-        return {"tables": tables, "open_review_items": groups}
+        return {"phase": self.phase, "tables": tables, "open_review_items": groups}

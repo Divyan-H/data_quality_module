@@ -1,7 +1,7 @@
 """The Results page: every final file of a run, and one zip with all of them.
 
-Final data is one file set per table the analyst kept: the table as the last phase that checked it left it (D, else C,
-else B), with only its data columns - ready to load. Each row's lineage (permanent Row_ID and the Excel row it came
+Final data is one file set per table the analyst kept: the table as Phase T (Transformations) left it when T ran,
+else as the last phase that checked it left it (D, else C, else B), with only its data columns - ready to load. Each row's lineage (permanent Row_ID and the Excel row it came
 from) is kept beside it as an audit file. The reports, audit files, configs and logs are the phases' own outputs.
 """
 from __future__ import annotations
@@ -17,37 +17,20 @@ import pyarrow.parquet as papq
 
 from src.common import units
 from src.common.columns import SYSTEM
-from src.common.dataset import phase_b_refs
 from src.storage.run_store import now
-from src.trends.weekly import tables as weekly_tables
 
 from .phases import ORDER, PHASES
 from .phases.base import Artifact, Paths, read_json
+from .sources import checked_sources, transformed_sources
 
 XLSX_MAX_ROWS = 100_000
 STAMP = ".built.json"
 
 
 def sources(run: Path) -> list[tuple[dict, Path, str]]:
-    """(table, the parquet to publish, phase that wrote it) for every table Phase B cleaned, in Phase B's order."""
-    work = Paths(run).work
-    b = work / "phase_b_hygiene"
-    if not (b / "run.json").exists():
-        return []
-    later = [(ph, {e["table_ref"]: folder for e, folder in units.checked(work / folder)})
-             for ph, folder in (("D", "phase_d_trends"), ("C", "phase_c_timeseries"))]
-    out = []
-    for ref in phase_b_refs(b):
-        stem = units.stem(ref)
-        rep = read_json(b / "quality_reports" / f"{stem}.json", {})
-        phase, path = next(((ph, done[ref] / "tables" / stem / "data.parquet") for ph, done in later if ref in done),
-                           ("B", b / "tables" / stem / "data.parquet"))
-        out.append(({"table_ref": ref, "sheet": rep.get("sheet"), "source_file": rep.get("source_file")}, path, phase))
-    for meta, folder in weekly_tables(work / "phase_d_trends"):      # a monthly table also published as weekly (Phase D)
-        stem = units.stem(meta["weekly_ref"])
-        out.append(({"table_ref": meta["weekly_ref"], "sheet": f"{meta.get('sheet') or Path(meta.get('source_file') or 'table').stem}_weekly",
-                     "source_file": meta.get("source_file")}, folder / "tables" / stem / "data.parquet", "D"))
-    return out
+    """(table, the parquet to publish, phase that wrote it) for every final table: Phase T's outputs when it ran,
+    else every table Phase B cleaned as the last checking phase left it (see src/orchestration/sources.py)."""
+    return transformed_sources(run) or checked_sources(run)
 
 
 def _export_one(parquet: Path, name: str, final: Path, phase: str, table: dict) -> None:

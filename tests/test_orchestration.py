@@ -191,14 +191,16 @@ def test_outcome_of_a_job_from_what_it_left_behind(tmp_path, files, cancelled, t
 
 # ------------------------------------------------------------------ the state machine
 def test_phase_order_helpers():
-    assert ORDER == ["A", "B", "C", "D"] and set(PHASES) == set(ORDER)
-    assert previous("A") is None and previous("C") == "B"
-    assert following("B") == ["C", "D"] and following("D") == []
+    assert ORDER == ["A", "B", "C", "D", "T"] and set(PHASES) == set(ORDER)
+    assert previous("A") is None and previous("C") == "B" and previous("T") == "D"
+    assert following("B") == ["C", "D", "T"] and following("D") == ["T"] and following("T") == []
 
 
 def test_only_phases_c_and_d_need_a_config_and_only_a_uses_the_llm():
     assert {k for k in ORDER if PHASES[k].needs_config} == {"C", "D"}
     assert {k for k in ORDER if PHASES[k].uses_llm} == {"A"}
+    assert {k for k in ORDER if PHASES[k].optional} == {"T"}                        # Transformations can be skipped
+    assert {k for k in ORDER if PHASES[k].supports_agent} == {"B", "T"}
 
 
 def test_unknown_phase_is_an_error_not_a_crash(service_settings, weekly_copy):
@@ -262,7 +264,7 @@ def test_bundle_of_a_run_with_no_results_is_empty_but_valid(service_settings, we
     p = Pipeline(service_settings)
     rid = p.create_run("r", [("w.xlsx", weekly_copy)], "off")
     assert bundle.collect(p.store.path(rid)) == []
-    assert p.results(rid) == {"complete": False, "files": [], "phases": {"A": "ready", "B": "locked", "C": "locked", "D": "locked"}}
+    assert p.results(rid) == {"complete": False, "files": [], "phases": {"A": "ready", "B": "locked", "C": "locked", "D": "locked", "T": "locked"}}
     path, name = p.bundle_zip(rid)
     assert name == "data_quality_results.zip" and path.exists()
 

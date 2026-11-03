@@ -56,6 +56,11 @@ def _listed(artifacts: list) -> list[tuple]:
     return out
 
 
+def is_complete(phases: dict) -> bool:
+    """The final files are ready: Phase D accepted, and Transformations (optional) either untouched or accepted."""
+    return phases["D"]["status"] == ACCEPTED and phases.get("T", {}).get("status", READY) in (READY, ACCEPTED)
+
+
 def _blank_phase(key: str, status: str) -> dict:
     return {"key": key, "status": status, "attempt": 0, "params": {}, "started_at": None, "finished_at": None,
             "error": None, "upload_error": None, "uploads": [], "llm": None, "candidates": None,
@@ -75,8 +80,16 @@ class Pipeline:
 
     # ------------------------------------------------------------------ startup
     def _recover(self) -> None:
-        """A run left 'running' by a previous service process has no worker any more: say so, and let it restart."""
+        """A run left 'running' by a previous service process has no worker any more: say so, and let it restart.
+        Runs made before a phase existed (Phase T) get it, ready once the phase before it is accepted."""
         for st in self.store.list():
+            missing = [k for k in ORDER if k not in st["phases"]]
+            if missing:
+                def add(s: dict, missing=missing) -> None:
+                    for k in missing:
+                        prev = previous(k)
+                        s["phases"][k] = _blank_phase(k, READY if prev and s["phases"][prev]["status"] == ACCEPTED else LOCKED)
+                self.store.update(st["id"], add)
             job = st.get("job")
             if not job:
                 continue
@@ -87,6 +100,11 @@ class Pipeline:
                 if job["action"] == "run":
                     ph.update(status=FAILED, finished_at=now(),
                               error={"code": "interrupted", "message": "The service stopped while this phase was running. Start it again."})
+                elif job["action"] in AGENT_ACTIONS:
+                    was = ph.pop("_agent", None) or {}
+                    ph["status"] = was.get("was", REVIEW)
+                    ph["agent_error"] = {"code": "interrupted", "at": now(),
+                                         "message": "The service stopped while a change was being applied; check the data and try again."}
                 s["job"] = None
             self.store.update(st["id"], fix)
 
@@ -135,7 +153,7 @@ class Pipeline:
             out.append({"id": s["id"], "name": s["name"], "created_at": s["created_at"], "updated_at": s["updated_at"],
                         "files": len(s["inputs"]), "running": bool(s.get("job")),
                         "phases": {k: phases[k]["status"] for k in ORDER},
-                        "complete": phases["D"]["status"] == ACCEPTED})
+                        "complete": is_complete(phases)})
         return out
 
     # ------------------------------------------------------------------ views
@@ -148,7 +166,8 @@ class Pipeline:
             arts = _listed(adapter.artifacts(run)) if ph["status"] in (REVIEW, ACCEPTED, RUNNING) else []
             ok, why = adapter.can_continue(run) if ph["status"] == REVIEW else (False, None)
             phases.append({**{k: v for k, v in ph.items() if not k.startswith("_")}, "title": adapter.title, "short": adapter.short, "describes": adapter.describes,
-                           "uses_llm": adapter.uses_llm, "needs_config": adapter.needs_config,
+                           "uses_llm": adapter.uses_llm, "needs_config": adapter.needs_config, "optional": adapter.optional,
+                           "supports_agent": adapter.supports_agent,
                            "review_name": adapter.review_name, "can_continue": ok, "blocked_reason": why,
                            "has_summary": (run / "summaries" / f"{key}.json").exists() and ph["status"] in (REVIEW, ACCEPTED),
                            "artifacts": [{"id": a.id, "label": a.label, "kind": a.kind, "primary": a.primary,
@@ -156,7 +175,7 @@ class Pipeline:
         job = st.get("job")
         return {"id": st["id"], "name": st["name"], "created_at": st["created_at"], "updated_at": st["updated_at"],
                 "inputs": st["inputs"], "options": st["options"], "job": job, "phases": phases,
-                "complete": st["phases"]["D"]["status"] == ACCEPTED}
+                "complete": is_complete(st["phases"])}
 
     def summary(self, run_id: str, key: str) -> dict:
         self._phase(key)
@@ -254,6 +273,8 @@ class Pipeline:
                     params["zero_expected"] = options["zero_expected"]
             if adapter.needs_config:
                 params["table"] = ph["config"]["table"]
+            if adapter.supports_agent:
+                params["recipes_dir"] = self.agent.recipes_dir()
             self._clear_from(st, run, key, include_self=True)
             try:
                 job = self.runner.launch(run_id, key, "run", params)
@@ -375,10 +396,11 @@ class Pipeline:
         return outcome
 
     def skip(self, run_id: str, key: str, reason: str | None = None) -> dict:
-        """Move on without running a config phase (C or D): for data the phase does not apply to, or when the analyst
-        chooses to. The phase counts as accepted so the next one unlocks; it is marked skipped everywhere it shows."""
+        """Move on without running a config phase (C or D) or an optional one (T): for data the phase does not apply
+        to, or when the analyst chooses to. The phase counts as accepted so the next one unlocks; it is marked skipped
+        everywhere it shows."""
         adapter = self._phase(key)
-        if not adapter.needs_config:
+        if not (adapter.needs_config or adapter.optional):
             raise PipelineError(400, "not_skippable", f"Phase {key} cannot be skipped: later phases need its output.")
         run = self.store.path(run_id)
         with self.store.edit(run_id) as st:
@@ -567,7 +589,7 @@ class Pipeline:
         run = self.store.path(run_id)
         st = self.store.load(run_id)
         arts = _listed(bundle.collect(run))
-        return {"complete": st["phases"]["D"]["status"] == ACCEPTED,
+        return {"complete": is_complete(st["phases"]),
                 "files": [{"id": a.id, "label": a.label, "group": bundle.group_of(a), "phase": a.phase, "kind": a.kind,
                            "description": a.description, "bytes": size} for a, size in arts],
                 "phases": {k: st["phases"][k]["status"] for k in ORDER}}

@@ -320,7 +320,7 @@ def test_a_table_with_only_year_and_month_labels_skips_c_and_d_and_still_deliver
     assert [(t["weekly"], t["level"]) for t in d] == [(False, "monthly")]
     assert flow.c.post(f"/api/v1/runs/{rid}/phases/D/skip", json={}).status_code == 200
     v = flow.view(rid)
-    assert v["complete"] and [p["skipped"] for p in v["phases"]] == [False, False, True, True]
+    assert v["complete"] and [p["skipped"] for p in v["phases"]] == [False, False, True, True, False]
     res = flow.c.get(f"/api/v1/runs/{rid}/results").json()
     ids = {x["id"] for x in res["files"]}
     assert res["complete"] and {flow.data_id(rid, "csv"), "hygiene-review", "structural-review"} <= ids

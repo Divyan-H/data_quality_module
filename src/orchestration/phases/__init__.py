@@ -5,10 +5,12 @@ from .base import Phase
 from .hygiene import HygienePhase
 from .structure import StructurePhase
 from .timeseries import TimeseriesPhase
+from .transform import TransformPhase
 from .trends import TrendsPhase
 
-ORDER = ["A", "B", "C", "D"]
-PHASES: dict[str, Phase] = {p.key: p for p in (StructurePhase(), HygienePhase(), TimeseriesPhase(), TrendsPhase())}
+ORDER = ["A", "B", "C", "D", "T"]
+PHASES: dict[str, Phase] = {p.key: p for p in (StructurePhase(), HygienePhase(), TimeseriesPhase(), TrendsPhase(),
+                                                 TransformPhase())}
 
 
 def previous(key: str) -> str | None:

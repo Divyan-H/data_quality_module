@@ -14,15 +14,15 @@ from pydantic import TypeAdapter, ValidationError
 
 from src.structure.llm.client import OllamaClient
 
-from ..operations import OPERATION_NAMES, Operation, Plan
+from ..operations import OPERATION_NAMES, OPERATION_TYPES, SHAPE_OPS, VALUE_OPS, Operation, Plan
 from .context import PlanningContext
 
-PROMPT_VERSION = "agent-plan/1"
+PROMPT_VERSION = "agent-plan/2"
 NUM_PREDICT = 1200
 SEED = 11
 _OP_ADAPTER = TypeAdapter(list[Operation])
 WHERE_OPS = {"resolve_findings", "set_value", "replace_values", "replace_text", "scale", "remove_rows"}
-TABLE_OPS = {"add_column", "rename_column"}
+FIELDS = {t.model_fields["op"].default: set(t.model_fields) for t in OPERATION_TYPES}   # op -> the fields it takes
 
 SYSTEM = """You turn a data analyst's instruction into a change plan for a data-quality tool. You never change data
 yourself: a person reviews a preview of your plan before anything happens.
@@ -39,11 +39,27 @@ Operations (use only these, with these fields):
   or `formula` over columns and numbers with + - * / and brackets.
 - rename_column: `column` -> `new_name`.
 - remove_rows: remove rows chosen by rows / conditions (never every row).
+- split_column: split `column` into the new columns `into` on `separator` (or regex `pattern` with groups).
+- classify: if / else into `column`: `rules` = [{"when": [conditions], "value": ...}], first match wins; `default`.
+Phase T only (they change a table's shape; give `table` when there are several tables):
+- unpivot: `columns` (or regex `pattern`) become rows; names into `names_to`, values into `values_to`.
+- pivot: values of `columns_from` become columns holding `values_from` (`agg` sum|mean|first|count), one row per `index`.
+- split_rows: one row per item of the list in `column`; `allocate` number columns (`method` equal_integer|equal|repeat).
+- allocate_by_share: share `columns` across `category` rows of `share_table` (`share` column or equal), keys `on`.
+- aggregate: group `by`, `sum` / `mean` / `first` columns, `count_as` a row count.
+- bucket_others: `column` values not in `keep` (or `keep_from` {table, column}, or outside `top_n`) become `label`.
+- net_next_period: `value` per `group_by` and month of `period`: next month's negative nets this month's allocation.
+- append_rows: rows of `source` under `table` (`rename` source->target columns, `where` conditions on the source).
+- lookup_join: bring `columns` from `lookup` where keys `on` (this table's column -> lookup's column) match.
+- convert_currency: `columns` x `rate`, or `rates` [{"from","to","rate"}] by `date_column`.
+- sort_rows `by` (+ `descending`), make_date (`month`, `day`, `name`), make_period (`column`, `unit`, `name`),
+  drop_columns `columns`, drop_table `table`.
 Conditions: {"column", "op", "value"} with op one of eq, ne, in, not_in, contains, starts_with, ends_with, empty,
 not_empty, gt, gte, lt, lte, matches.
 
 Rules for you:
-- Use only the columns, rule codes and values listed in CONTEXT. Choose rows with conditions or Excel row numbers.
+- Use only the columns, tables, rule codes and values listed in CONTEXT. Choose rows with conditions or Excel row numbers.
+- CONTEXT.phase "B" allows only the value operations; "T" allows everything except resolve_findings.
 - If the instruction is ambiguous, or names something not in CONTEXT, set intent "unclear" and write one short question
   in "ask". Never guess.
 - intent "question" for questions about the data or the issues (the tool answers them); "help" for how-to questions.
@@ -63,8 +79,15 @@ EXAMPLES = [
 ]
 
 
+def allowed_ops(ctx: PlanningContext) -> list[str]:
+    if ctx.phase == "T":
+        return [n for n in OPERATION_NAMES if n != "resolve_findings"]
+    return [n for n in OPERATION_NAMES if n in VALUE_OPS]
+
+
 def schema(ctx: PlanningContext) -> dict:
     cols = ctx.columns or [""]
+    names = {"type": "array", "items": {"type": "string"}}
     col = {"type": "string", "enum": cols}
     rows = {"type": "array", "items": {"type": "integer"}}
     nullable = {"type": ["string", "null"]}
@@ -73,7 +96,21 @@ def schema(ctx: PlanningContext) -> dict:
                                                          "empty", "not_empty", "gt", "gte", "lt", "lte", "matches"]},
         "value": {}}, "required": ["column", "op"]}
     op = {"type": "object", "properties": {
-        "op": {"type": "string", "enum": OPERATION_NAMES},
+        "op": {"type": "string", "enum": allowed_ops(ctx)},
+        "table": {"type": "string", "enum": ctx.table_names or [""]}, "into": names, "separator": {"type": "string"},
+        "pattern": {"type": "string"}, "rules": {"type": "array", "items": {"type": "object", "properties": {
+            "when": {"type": "array", "items": condition}, "value": nullable}, "required": ["when", "value"]}},
+        "names_to": {"type": "string"}, "values_to": {"type": "string"}, "index": names, "columns_from": col,
+        "values_from": col, "agg": {"type": "string", "enum": ["sum", "mean", "first", "count"]}, "allocate": names,
+        "method": {"type": "string", "enum": ["equal_integer", "equal", "repeat"]}, "keep_together": names,
+        "share_table": {"type": "string"}, "on": {"type": "object", "additionalProperties": {"type": "string"}},
+        "category": {"type": "string"}, "share": {"type": "string"}, "by": names, "sum": names, "mean": names,
+        "count_as": {"type": "string"}, "keep": names, "top_n": {"type": "integer"}, "label": {"type": "string"},
+        "also": names, "sum_by": names, "period": {"type": "string"}, "group_by": names, "source": {"type": "string"},
+        "rename": {"type": "object", "additionalProperties": {"type": "string"}}, "lookup": {"type": "string"},
+        "rates": {"type": "array", "items": {"type": "object"}}, "rate": {"type": "number"}, "date_column": {"type": "string"},
+        "descending": {"type": "array", "items": {"type": "boolean"}}, "month": {"type": "string"}, "day": {"type": "string"},
+        "unit": {"type": "string", "enum": ["month", "quarter", "year", "week"]},
         "decision": {"type": "string", "enum": ["accept", "reject", "keep", "set", "split"]},
         "rules": {"type": "array", "items": {"type": "string"}},
         "column": col, "columns": {"type": "array", "items": col}, "from_column": col,
@@ -104,12 +141,16 @@ def to_operations(raw_ops: list[dict], ctx: PlanningContext) -> list:
     for raw in raw_ops:
         raw = {k: v for k, v in raw.items() if v not in (None, [], {}, "") or k in ("value", "new_value", "default")}
         name = raw.get("op")
+        if name not in allowed_ops(ctx):
+            raise ValueError(f"'{name}' is not available in Phase {ctx.phase}")
         if name in WHERE_OPS:
             where = {k: raw.pop(k) for k in ("tables", "rows", "exclude_rows", "conditions") if k in raw}
+            if raw.get("table") and "tables" not in where:
+                where["tables"] = [raw.pop("table")]
             raw["where"] = where
-        allowed = {"op", "where", "decision", "rules", "column", "columns", "value", "new_value", "mapping", "ignore_case",
-                   "find", "replace", "regex", "factor", "name", "from_column", "default", "formula", "tables", "new_name"}
-        ops.append({k: v for k, v in raw.items() if k in allowed})
+        elif name == "append_rows" and "conditions" in raw:
+            raw["where"] = raw.pop("conditions")
+        ops.append({k: v for k, v in raw.items() if k in FIELDS[name]})
     typed = _OP_ADAPTER.validate_python(ops)
     for op in typed:                                              # extra fields the op does not take are rejected by
         for field_ in ("column", "from_column"):                  # pydantic (extra="forbid"); names are checked here

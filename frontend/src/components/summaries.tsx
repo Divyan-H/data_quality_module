@@ -1,6 +1,6 @@
 import { number, plural } from "../format";
 import { useEffect, useState } from "react";
-import type { BucketRow, FindingRow, IssueRow, NotChecked, SummaryA, SummaryB, SummaryC, SummaryCTable, SummaryD, SummaryDTable } from "../types";
+import type { SummaryT, BucketRow, FindingRow, IssueRow, NotChecked, SummaryA, SummaryB, SummaryC, SummaryCTable, SummaryD, SummaryDTable } from "../types";
 import { DataTable } from "./DataTable";
 import { Alert, Stat } from "./ui";
 
@@ -334,6 +334,38 @@ function SummaryDTableView({ s }: { s: SummaryDTable }) {
         <h3 style={{ marginBottom: 8 }}>Findings</h3>
         <FindingsTable rows={s.findings} byCode={s.findings_by_code} total={total} />
       </section>
+    </div>
+  );
+}
+
+export function SummaryTView({ s }: { s: SummaryT }) {
+  return (
+    <div className="stack">
+      {s.failed && (
+        <div className="alert error"><div><b>Step {s.failed.step} does not run on this data</b>{s.failed.text} {s.failed.message}</div></div>
+      )}
+      <div>
+        <h3>Recipe ({s.steps.length} step{s.steps.length === 1 ? "" : "s"})</h3>
+        {s.steps.length === 0 ? (
+          <p className="muted small">No steps yet: the final files are the checked tables. Open Transform with agent to add steps.</p>
+        ) : (
+          <ol className="recipe-list">
+            {s.steps.map((st) => (
+              <li key={st.step}><span>{st.text}</span> <span className="muted small">{st.summary}</span></li>
+            ))}
+          </ol>
+        )}
+      </div>
+      <div className="table-wrap">
+        <table className="t">
+          <thead><tr><th>Output table</th><th className="num">Rows</th><th className="num">Columns</th><th>From</th></tr></thead>
+          <tbody>
+            {s.tables.map((t) => (
+              <tr key={t.name}><td>{t.name}</td><td className="num">{t.rows.toLocaleString()}</td><td className="num">{t.columns}</td><td>{t.made_here ? "made here" : "checked data"}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

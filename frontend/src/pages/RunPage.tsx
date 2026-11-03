@@ -117,6 +117,18 @@ export function RunPage({ runId, view, options, llmStatus }: {
     }
   }
 
+  async function skip(key: PhaseKey) {
+    setBusy(true);
+    try {
+      setRun(await api.skip(runId, key, "Skipped by the analyst: the checked tables are final."));
+      navigate(`/run/${runId}/${nextKey(key) ?? "results"}`);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function cancel() {
     setCancelling(true);
     try {
@@ -131,7 +143,7 @@ export function RunPage({ runId, view, options, llmStatus }: {
 
   function body() {
     if (current === "results") {
-      return run!.complete ? <ResultsPage run={run!} /> : <Alert kind="info">The final files are available once Phase D is accepted.</Alert>;
+      return run!.complete ? <ResultsPage run={run!} /> : <Alert kind="info">The final files are available once Phase D is accepted, and Transformations too if you started them.</Alert>;
     }
     const p = phase!;
     if (p.status === "locked") {
@@ -161,7 +173,8 @@ export function RunPage({ runId, view, options, llmStatus }: {
       return p.needs_config ? (
         <ConfigPanel run={run!} phase={p} busy={busy} onChange={setRun} onStart={() => go()} onError={fail} />
       ) : (
-        <StartPanel run={run!} phase={p} options={options} busy={busy} onStart={go} llmOffline={llmStatus ? !llmStatus.available : false} />
+        <StartPanel run={run!} phase={p} options={options} busy={busy} onStart={go} llmOffline={llmStatus ? !llmStatus.available : false}
+          onSkip={p.optional ? () => skip(p.key) : undefined} />
       );
     }
     return (

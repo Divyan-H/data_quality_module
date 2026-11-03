@@ -28,6 +28,7 @@ from src.hygiene.config import RULE_TEXT
 from ..operations import (AddColumn, Condition, Plan, RemoveRows, RenameColumn, ReplaceText, ReplaceValues,
                           ResolveFindings, RowFilter, Scale, SetValue)
 from .context import PlanningContext, rules_for_words
+from .transform_commands import TransformCommands, infer_table
 
 EMPTY_WORDS = {"empty", "blank", "null", "nothing", "none", "missing", "na", "n/a", "nan", "no value", "an empty cell",
                "empty cell", "blank cell"}
@@ -47,7 +48,19 @@ HELP = """I can change this phase's data for you. Each change is shown as a prev
 • "add column Campaign_Type from Campaign: Diwali Blast = Festive, Summer Sale = Seasonal"
 • "add column Revenue = Orders * AOV"  •  "rename column Amt to Amount"
 • "remove rows where Status is Test"  •  "split the multi-value cells in City"
-Ask "summary" to see what is still open."""
+Ask "summary" to see what is still open.
+
+In Transformations (Phase T) the chat also reshapes tables:
+• "unpivot Day 1 to Day 31 into rows as Day and Reactivated"  •  "make Date from Month and Day"
+• "pivot Inactivity Bucket into columns using Reactivated"  •  "split Full Name into First and Last"
+• "split City into rows sharing Usage keeping Delhi NCR together"  •  "sum Impressions, Clicks by day, channel, network"
+• "label channel not in Channels as Others also network then sum clicks by day"
+• "allocate Spend, Reach by City from Audience using Pct matching Campaign"
+• "net next-month negatives in Spend by Month per Site"  •  "append DAP New to DAP Base where DATE >= 2025-09-09"
+• "look up CURRENT_AOV from AOV matching Date, City"  •  "convert Spend from USD to INR at 83.2"
+• "set Tier to Gold if Spend > 100000, else Silver"  •  "sort by Period, Geography"  •  "drop table AOV"
+• "save recipe as Coupons monthly"  •  "use recipe Coupons monthly"  •  "show recipe"
+"""
 
 
 class Ask(Exception):
@@ -104,9 +117,15 @@ def as_value(s: str) -> str | None:
     return None if v.lower() in EMPTY_WORDS else v
 
 
-class CommandParser:
+class CommandParser(TransformCommands):
+    Ask = Ask
+
     def __init__(self, ctx: PlanningContext):
         self.ctx = ctx
+
+    split_values = staticmethod(lambda s: split_values(s))
+    unquote = staticmethod(lambda s: unquote(s))
+    parse_number = staticmethod(lambda s: parse_number(s))
 
     # ── entry ────────────────────────────────────────────────────────────────
     def parse(self, text: str) -> Plan | None:
@@ -114,11 +133,16 @@ class CommandParser:
         if not t:
             return Plan(answer=HELP)
         try:
-            for handler in (self._help, self._summary, self._undo, self._remove_rows, self._split, self._rename,
-                            self._add_column, self._scale, self._resolve, self._fill_empty, self._row_set,
-                            self._set, self._set_no_to, self._clear, self._replace, self._statement):
+            for handler in (self._help, self._summary, self._undo, self._drop, self._remove_rows, self._classify,
+                            self._unpivot, self._pivot, self._split_column, self._split_rows, self._allocate, self._split,
+                            self._rename, self._make_period, self._make_date, self._aggregate, self._others, self._net,
+                            self._append, self._lookup, self._currency, self._sort, self._add_column, self._scale,
+                            self._resolve, self._fill_empty, self._row_set, self._set, self._set_no_to, self._clear,
+                            self._replace, self._statement):
                 plan = handler(t)
                 if plan is not None:
+                    for op in plan.ops:
+                        infer_table(op, self.ctx)
                     return plan
         except Ask as q:
             return Plan(ask=str(q))
@@ -176,6 +200,9 @@ class CommandParser:
             if kind == "num":
                 n = parse_number(raw)
                 if n is None:
+                    from ..selectors import as_date
+                    if as_date(unquote(raw)) is not None:                    # 'Date >= 2025-09-09' compares dates
+                        return Condition(column=col, op=op, value=unquote(raw))
                     continue
                 return Condition(column=col, op=op, value=n)
             if kind == "list":

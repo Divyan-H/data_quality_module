@@ -95,7 +95,7 @@ def test_daily_sheet_phase_b_flags_and_review_answers(flow, workbook):
     flow.accept(rid, "C")
     assert flow.c.post(f"/api/v1/runs/{rid}/phases/D/skip", json={}).status_code == 200
     v = flow.view(rid)
-    assert v["complete"] and [p["skipped"] for p in v["phases"]] == [False, False, False, True]
+    assert v["complete"] and [p["skipped"] for p in v["phases"]] == [False, False, False, True, False]
     z = zipfile.ZipFile(io.BytesIO(flow.c.get(f"/api/v1/runs/{rid}/bundle").content))
     assert "MANIFEST.json" in z.namelist() and z.testzip() is None
 

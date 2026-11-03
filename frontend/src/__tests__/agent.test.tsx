@@ -132,3 +132,43 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
   });
 });
+
+describe("Phase T", () => {
+  const tPreview = {
+    kind: "transform" as const,
+    operations: [{
+      text: "Turn Day 1, Day 2 into rows: column names into 'Day', values into 'Value'.",
+      summary: "Reactivation: 2 → 4 rows, +Day, +Value; −Day 1, −Day 2",
+      effect: {
+        tables: [{ table: "Reactivation", rows_before: 2, rows_after: 4, columns_added: ["Day", "Value"], columns_removed: ["Day 1", "Day 2"] }],
+        cells: 0, notes: ["2 column(s) turned into rows: Day 1, Day 2."], unmatched: [], unmatched_total: 0,
+        sample: { table: "Reactivation", columns: ["City", "Day", "Value"], rows: [["Pune", "Day 1", "1"], ["Pune", "Day 2", "2"]] },
+      },
+    }],
+    summary: "Reactivation: 2 → 4 rows", steps_before: 0, tables_after: [{ name: "Reactivation", rows: 4, columns: 3 }],
+    changes_anything: true,
+  };
+  it("previews a reshaping step with the first rows of the result", async () => {
+    const f = { onApply: vi.fn(), onDiscard: vi.fn(), onAgain: vi.fn() };
+    render(<ProposalCard cs={{ ...cs("proposed"), preview: tPreview }} busy={false} {...f} />);
+    expect(screen.getByText(/2 → 4 rows/)).toBeInTheDocument();
+    expect(screen.getAllByText("Pune")).toHaveLength(2);
+    await userEvent.click(screen.getByRole("button", { name: "Apply and add to the recipe" }));
+    expect(f.onApply).toHaveBeenCalledOnce();
+  });
+  it("lists the recipe steps, a failing step, and the output tables", async () => {
+    const onSuggest = vi.fn();
+    const { RecipePanel } = await import("../components/agent/RecipePanel");
+    render(<RecipePanel disabled={false} onSuggest={onSuggest} issues={{
+      open: 0, resolved: 0, resolved_by_agent: 0, groups: [],
+      tables: [{ ref: "Reactivation", file: null, sheet: "Reactivation", rows: 4, columns: ["City", "Day", "Value"] }],
+      steps: [{ step: 1, text: "Turn Day 1, Day 2 into rows.", summary: "2 → 4 rows", changeset: "cs-0001", notes: [] }],
+      failed: { step: 2, text: "Drop Nope", message: "There is no column 'Nope'." },
+    }} />);
+    expect(screen.getByRole("list", { name: "Recipe steps" })).toHaveTextContent("Turn Day 1, Day 2 into rows.");
+    expect(screen.getByText(/Step 2 does not run/)).toBeInTheDocument();
+    expect(screen.getByText(/4 rows · 3 cols/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "show recipe" }));
+    expect(onSuggest).toHaveBeenCalledWith("show recipe");
+  });
+});

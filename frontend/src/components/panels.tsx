@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, type StartOptions } from "../api";
 import { bytes, number, plural } from "../format";
-import type { Artifact, CandidateTable, ColumnChoiceTable, ConfigPreview, Phase, PhaseKey, Run, ServiceOptions, SummaryA, SummaryB, SummaryC, SummaryD } from "../types";
-import { SummaryAView, SummaryBView, SummaryCView, SummaryDView } from "./summaries";
+import type { Artifact, CandidateTable, ColumnChoiceTable, ConfigPreview, Phase, PhaseKey, Run, ServiceOptions, SummaryA, SummaryB, SummaryC, SummaryD, SummaryT } from "../types";
+import { SummaryAView, SummaryBView, SummaryCView, SummaryDView, SummaryTView } from "./summaries";
 import { Alert, DownloadLink, FileDrop, Modal, ProblemList, StatusChip } from "./ui";
 
 /* ------------------------------------------------------------------ small pieces */
@@ -61,6 +61,7 @@ export function StartPanel({
   busy,
   onStart,
   llmOffline,
+  onSkip,
 }: {
   run: Run;
   phase: Phase;
@@ -68,6 +69,8 @@ export function StartPanel({
   busy: boolean;
   onStart: (o: StartOptions) => void;
   llmOffline: boolean;
+  /** Optional phases (T) can be skipped from the start screen. */
+  onSkip?: () => void;
 }) {
   const [review, setReview] = useState<"near_ties" | "all">("all");
   const [fixes, setFixes] = useState<Record<string, boolean>>({});
@@ -202,13 +205,26 @@ export function StartPanel({
               </details>
             </>
           )}
+          {phase.key === "T" && (
+            <dl className="kv">
+              <dt>Input</dt>
+              <dd>The checked tables, as the final files would hold them now.</dd>
+              <dt>Output</dt>
+              <dd>The reshaped tables become the final files. A report lists every step with rows before and after.</dd>
+              <dt>Recipe</dt>
+              <dd>Starts empty (or with the steps you built before an earlier phase ran again). You add steps in the chat after the first run.</dd>
+            </dl>
+          )}
           <div className="row end">
+            {onSkip && phase.optional && (
+              <button className="btn ghost" disabled={busy} onClick={onSkip}>Skip: the checked tables are final</button>
+            )}
             <button
               className="btn primary lg"
               disabled={busy}
-              onClick={() => onStart(phase.key === "A" ? { llm_review: review } : { fixes, ...(Object.keys(zeroExpected()).length ? { zero_expected: zeroExpected() } : {}) })}
+              onClick={() => onStart(phase.key === "A" ? { llm_review: review } : phase.key === "T" ? {} : { fixes, ...(Object.keys(zeroExpected()).length ? { zero_expected: zeroExpected() } : {}) })}
             >
-              {retry ? "Try again" : `Run Phase ${phase.key}`}
+              {retry ? "Try again" : phase.key === "T" ? "Open Transformations" : `Run Phase ${phase.key}`}
             </button>
           </div>
         </div>
@@ -517,19 +533,21 @@ export function ReviewPanel({
           {!!summary && phase.key === "B" && <SummaryBView s={summary as SummaryB} />}
           {!!summary && phase.key === "C" && <SummaryCView s={summary as SummaryC} />}
           {!!summary && phase.key === "D" && <SummaryDView s={summary as SummaryD} />}
+          {!!summary && phase.key === "T" && <SummaryTView s={summary as SummaryT} />}
         </div>
       </div>
       {onOpenAgent && (
         <div className="card card-pad agent-entry">
           <div className="grow">
-            <h3>Fix with the agent</h3>
+            <h3>{phase.key === "T" ? "Transform with the agent" : "Fix with the agent"}</h3>
             <p className="muted small">
-              See the data and the open issues side by side and say what to change: “accept all date fixes except row 14”,
-              “Head Office is Bangalore”, “Spend is in thousands”. Every change is previewed first and logged in the audit.
-              {phase.agent?.applied ? ` ${plural(phase.agent.applied, "change")} applied so far.` : ""}
+              {phase.key === "T"
+                ? "Say how to reshape the data: “unpivot Day 1 to Day 31 into rows”, “split City into rows sharing Usage”, “sum Clicks by day, channel”, “look up AOV from AOV matching Date, City”. Each step is previewed, then kept in the recipe."
+                : "See the data and the open issues side by side and say what to change: “accept all date fixes except row 14”, “Head Office is Bangalore”, “Spend is in thousands”. Every change is previewed first and logged in the audit."}
+              {phase.agent?.applied ? ` ${plural(phase.agent.applied, phase.key === "T" ? "step" : "change")} applied so far.` : ""}
             </p>
           </div>
-          <button className="btn primary" onClick={onOpenAgent} disabled={busy}>Fix with agent</button>
+          <button className="btn primary" onClick={onOpenAgent} disabled={busy}>{phase.key === "T" ? "Transform with agent" : "Fix with agent"}</button>
         </div>
       )}
       <div className="card">
@@ -555,14 +573,14 @@ export function ReviewPanel({
               ))}
             </ul>
           )}
-          <div>
+          {phase.key !== "T" && <div>
             <h3><span className="num-step">2</span>Edit it in Excel and upload it back</h3>
             <p className="muted small" style={{ margin: "0 0 8px 30px" }}>
               Only change the columns the workbook marks as editable. The file is checked before anything is applied; if it does not pass, nothing changes.
               {downstream ? " Applying edits discards the later phases, which then need to be run again." : ""}
             </p>
             <FileDrop accept={[".xlsx"]} compact title="Drop the edited workbook here" disabled={busy} onFiles={(f) => (downstream ? setConfirm(f[0].file) : onUpload(f[0].file))} />
-          </div>
+          </div>}
           <MoreFiles runId={run.id} artifacts={phase.artifacts} />
         </div>
       </div>

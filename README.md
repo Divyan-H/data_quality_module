@@ -1,6 +1,6 @@
 # Data Pipeline service (Data Quality / ETL module)
 
-Analyst web app and service for Phases A to D (structural intake, cell hygiene, time-series checks, trend checks).
+Analyst web app and service for Phases A to D (structural intake, cell hygiene, time-series checks, trend checks) and the optional Phase T (transformations).
 Start it with `scripts\start.ps1` after `ollama serve`, open <http://127.0.0.1:8000>.
 How it works, the API, decisions and known gaps: [docs/dq_service_implementation_notes.md](docs/dq_service_implementation_notes.md).
 Each phase has its own notes in `docs/dq_[a-d]_implementation_notes.md`; the specs are in `docs/architecture/specs/`.
@@ -40,6 +40,7 @@ it, then build there.
 - `orchestration/` — the A -> D state machine, worker processes, final files (`bundle.py`)
 - `api/` — the HTTP API and the analyst web app (`python -m src.api`)
 - `agent/` — Fix-with-agent: plain-English instructions -> previewed, audited, undoable changes ([docs/agent_implementation_notes.md](docs/agent_implementation_notes.md))
+- `agent/transform/` — Phase T, Transformations: reshape the checked tables with a recipe built in the chat; replaces the Porter scripts ([docs/transformations.md](docs/transformations.md))
 - `llm_interface/` — whether the local Ollama model is reachable
 - `security/` — upload name and path checks
 - `storage/` — run folders and their event log

@@ -12,8 +12,10 @@ phase it serves. Errors the analyst can act on are AgentError; they become chat 
 from __future__ import annotations
 
 import logging
+import re
 
 from .errors import AgentError
+from .operations import Plan
 from .planner import Planner, PlanningContext
 from .store import AgentStore, ChangeSet, now
 from .workspace import Workspace
@@ -42,8 +44,13 @@ class AgentService:
         if len(text) > 2000:
             raise AgentError("message_too_long", "Keep an instruction under 2,000 characters; split it into steps.")
         user = self.store.add_message("user", text)
-        tables = self.ws.load()
-        plan = self.planner.plan(text, PlanningContext(tables))
+        try:
+            plan = self._recipe_command(text)
+        except AgentError as e:
+            plan = Plan(answer=e.message)
+        if plan is None:
+            tables = self.ws.load()
+            plan = self.planner.plan(text, PlanningContext(tables, self.ws.phase))
         log.info("agent plan from %s: %s", plan.source,
                  "ask" if plan.ask else "answer" if plan.answer else [op.op for op in plan.ops])
         if plan.ask:
@@ -77,6 +84,32 @@ class AgentService:
                                        "proposal", cs_id)
         return {"messages": [user.model_dump(), reply.model_dump()], "changeset": {**cs.brief(), "preview": preview}}
 
+    def _recipe_command(self, text: str) -> Plan | None:
+        """Recipe commands (Phase T): save the steps to the library, list it, show the steps, or use a saved recipe
+        (its steps become an ordinary proposal: previewed, applied with a click)."""
+        t = " ".join(text.strip().rstrip(".!").split())
+        m = re.fullmatch(r"(?:save|store|keep)\s+(?:this\s+|the\s+)?recipe\s+(?:as|named|called)\s+[\"']?(.+?)[\"']?", t, re.I)
+        saving, using = m, re.fullmatch(r"(?:use|load|apply|run|reuse)\s+(?:the\s+)?(?:saved\s+)?recipe\s+[\"']?(.+?)[\"']?", t, re.I)
+        listing = re.fullmatch(r"(?:list|show)\s+(?:the\s+|my\s+|all\s+)?(?:saved\s+)?recipes", t, re.I)
+        showing = re.fullmatch(r"(?:show|list|what are)\s+(?:the\s+|my\s+)?(?:recipe|steps)(?:\s+so\s+far)?", t, re.I)
+        if not (saving or using or listing or showing):
+            return None
+        if not getattr(self.ws, "supports_recipes", False):
+            return Plan(answer="Recipes are for Phase T (Transformations): the steps that reshape the checked data.")
+        if saving:
+            return Plan(answer=self.ws.save_recipe(saving.group(1), self.store.phase))
+        if listing:
+            names = self.ws.library.names()
+            return Plan(answer=("Saved recipes: " + ", ".join(names) + ". Say \"use recipe <name>\" to apply one.")
+                        if names else "No recipe is saved yet. Build the steps, then say \"save recipe as <name>\".")
+        if showing:
+            steps = self.ws.recipe()
+            from . import describe
+            return Plan(answer=("The recipe so far:\n" + "\n".join(f"{n}. {describe.operation(op)}" for n, op in enumerate(steps, 1)))
+                        if steps else "The recipe has no steps yet.")
+        ops = self.ws.library.load(using.group(1))
+        return Plan(ops=ops, source="rules")
+
     # ── apply ────────────────────────────────────────────────────────────────
     def _proposal(self, cs_id: str) -> ChangeSet:
         cs = self.store.get(cs_id)
@@ -108,10 +141,13 @@ class AgentService:
         self.store.save(cs)
         self._stale_others(cs.id)                        # their previews were computed on the data before this change
         self.store.prune_snapshots(UNDO_DEPTH)
-        msg = self.store.add_message("agent", f"Applied {cs.id}: {result['summary']}"
+        tail = (f" The recipe now has {result['steps']} step(s)." if "steps" in result
+                else f" {result['open_items_after']} review item(s) are still open.")
+        summary = result["summary"].rstrip()
+        summary += "" if summary.endswith((".", "!", "?")) else "."
+        msg = self.store.add_message("agent", f"Applied {cs.id}: {summary}"
                                      + (f" Phase B's rules then tidied {result['follow_up_fixes']} of the new values."
-                                        if result.get("follow_up_fixes") else "")
-                                     + f" {result['open_items_after']} review item(s) are still open.", "result", cs.id)
+                                        if result.get("follow_up_fixes") else "") + tail, "result", cs.id)
         return {"changeset": cs.brief(), "message": msg.model_dump(), "result": result}
 
     # ── undo / discard ───────────────────────────────────────────────────────

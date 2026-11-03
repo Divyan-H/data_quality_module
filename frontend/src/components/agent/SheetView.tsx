@@ -15,13 +15,15 @@ function cellTitle(row: SheetRow, col: string): string | undefined {
 }
 
 /** The phase's data as the review workbook shows it: green = changed, yellow = waiting for a decision. */
-export function SheetView({ runId, phase, tables, focus, version, onClearFocus }: {
+export function SheetView({ runId, phase, tables, focus, version, onClearFocus, plain = false }: {
   runId: string;
   phase: PhaseKey;
   tables: AgentTable[];
   focus: IssueGroup | null;
   version: string;
   onClearFocus: () => void;
+  /** Phase T: no per-cell states, so no Changed / Waiting filters and no colour legend. */
+  plain?: boolean;
 }) {
   const [table, setTable] = useState<string | null>(tables[0]?.ref ?? null);
   const [only, setOnly] = useState<"all" | "changed" | "flagged">("all");
@@ -65,13 +67,13 @@ export function SheetView({ runId, phase, tables, focus, version, onClearFocus }
         ) : (
           <b>{tableLabel(tables[0])}</b>
         )}
-        <div className="seg" role="group" aria-label="Rows to show">
+        {!plain && <div className="seg" role="group" aria-label="Rows to show">
           {(["all", "changed", "flagged"] as const).map((o) => (
             <button key={o} aria-pressed={only === o} onClick={() => { setOnly(o); setOffset(0); }}>
               {o === "all" ? "All rows" : o === "changed" ? "Changed" : "Waiting"}
             </button>
           ))}
-        </div>
+        </div>}
         {focus && (
           <span className="chip info">
             {focus.rule} · {focus.column ?? "table"}
@@ -116,12 +118,12 @@ export function SheetView({ runId, phase, tables, focus, version, onClearFocus }
         </table>
         {page && page.rows.length === 0 && <div className="empty small">No rows match.</div>}
       </div>
-      <div className="sheet-legend small muted">
+      {!plain && <div className="sheet-legend small muted">
         <span><i className="sw fix" /> fixed by a rule</span>
         <span><i className="sw edit" /> changed by you / the agent</span>
         <span><i className="sw flag" /> waiting for a decision</span>
         <span>Hover a cell for details.</span>
-      </div>
+      </div>}
     </div>
   );
 }

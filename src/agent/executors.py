@@ -11,14 +11,15 @@ import re
 from decimal import Decimal, DivisionByZero, InvalidOperation
 from typing import Callable
 
+from src.hygiene.cities import normalize
 from src.hygiene.config import ALIASES
 from src.hygiene.rules import _num_text
 from src.hygiene.table import Table
 from src.hygiene.values import parse_number
 
 from .errors import AgentError
-from .operations import (AddColumn, RemoveRows, RenameColumn, ReplaceText, ReplaceValues, ResolveFindings, Scale,
-                         SetValue)
+from .operations import (SHAPE_OPS, AddColumn, Classify, RemoveRows, RenameColumn, ReplaceText, ReplaceValues,
+                         ResolveFindings, RowFilter, Scale, SetValue, SplitColumn)
 from .selectors import column_in, label, rows, table_matches, text_key
 from .session import EditSession, value_counts
 
@@ -297,14 +298,81 @@ def remove_rows(s: EditSession, op: RemoveRows) -> None:
         s.note("No row matched.")
 
 
+# ── split_column ────────────────────────────────────────────────────────────
+def split_parts(v: str | None, op: SplitColumn) -> list[str | None]:
+    """The parts of one cell, padded with None to len(op.into)."""
+    n = len(op.into)
+    if v is None:
+        return [None] * n
+    if op.pattern is not None:
+        m = re.search(op.pattern, v)
+        parts = list(m.groups()) if m and m.groups() else []
+    else:
+        parts = [p.strip() for p in (v.split(op.separator, n - 1) if op.separator.strip() else v.split(None, n - 1))]
+    parts = [p if p not in ("", None) else None for p in parts][:n]
+    return parts + [None] * (n - len(parts))
+
+
+def split_column(s: EditSession, op: SplitColumn) -> None:
+    if op.pattern is not None:
+        try:
+            re.compile(op.pattern)
+        except re.error as e:
+            raise AgentError("bad_pattern", f"The pattern '{op.pattern}' is not valid: {e}") from e
+    for t, col in _with_column(s.tables, op.tables, op.column):
+        clash = [n for n in op.into if n in t.cols and n != col]
+        if clash:
+            raise AgentError("column_exists", f"{label(t)} already has {', '.join(clash)}.")
+        parts = [split_parts(v, op) for v in t.data[col]]
+        unsplit = sum(1 for v, p in zip(t.data[col], parts) if v is not None and p[1] is None)
+        if unsplit:
+            s.note(f"{unsplit} value(s) of {col} have only one part; the other new columns are empty there.")
+        for k, name in enumerate(op.into):
+            if name == col:
+                continue
+            s.add_column(t, name, [p[k] for p in parts], f"Split from {col} by the agent.")
+        if not op.keep_original and col not in op.into:
+            s.note(f"{col} is kept: Phase B never removes a column (it is left out in Phase T if you drop it there).")
+
+
+# ── classify ────────────────────────────────────────────────────────────────
+def classify(s: EditSession, op: Classify) -> None:
+    for t in _chosen(s.tables, op.tables):
+        n = len(t.data["_row_id"])
+        chosen: list[int | None] = [None] * n
+        for k, rule in enumerate(op.rules):
+            for i in rows(t, RowFilter(conditions=rule.when)):
+                if chosen[i] is None:
+                    chosen[i] = k
+        counts = [chosen.count(k) for k in range(len(op.rules))]
+        s.note("Rows per rule: " + ", ".join(f"{r.value!r}: {c}" for r, c in zip(op.rules, counts))
+               + f", no rule: {chosen.count(None)}.")
+        target = next((c for c in t.cols if normalize(c) == normalize(op.column)), None)   # exact name: else a new column
+        if target is None:
+            values = [op.rules[k].value if k is not None else op.default for k in chosen]
+            s.add_column(t, op.column, values, f"Column added by the agent: {op.column} by {len(op.rules)} rule(s).")
+            continue
+        why = f"Classified by the agent into {target}."
+        for i, k in enumerate(chosen):
+            if k is not None:
+                s.edit(t, target, i, op.rules[k].value, why)
+            elif not op.keep_existing:
+                s.edit(t, target, i, op.default, why)
+
+
 EXECUTORS: dict[str, Callable] = {
     "resolve_findings": resolve_findings, "set_value": set_value, "replace_values": replace_values,
     "replace_text": replace_text, "scale": scale, "add_column": add_column, "rename_column": rename_column,
-    "remove_rows": remove_rows,
+    "remove_rows": remove_rows, "split_column": split_column, "classify": classify,
 }
 
 
 def execute(s: EditSession, ops: list) -> None:
     for op in ops:
+        if op.op in SHAPE_OPS:
+            raise AgentError("needs_transform_phase",
+                             f"'{op.op.replace('_', ' ')}' changes the shape of the table, so it belongs in Phase T "
+                             "(Transformations), after the checks. Accept the checking phases, then open Phase T and ask "
+                             "there. Value fixes, new columns and splitting a column into columns work here.")
         s.begin()
         EXECUTORS[op.op](s, op)

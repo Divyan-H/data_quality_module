@@ -12,7 +12,7 @@ from fnmatch import fnmatch
 from src.hygiene.cities import normalize
 from src.hygiene.rules import find_expected_columns
 from src.hygiene.table import Table
-from src.hygiene.values import parse_number
+from src.hygiene.values import parse_date, parse_number
 
 from .errors import AgentError
 from .operations import Condition, RowFilter
@@ -74,6 +74,16 @@ def _number(t: Table, col: str, v) -> float | None:
     return float(n) if n is not None else None
 
 
+def as_date(v) -> tuple | None:
+    """(y, m, d) when `v` is a date ('2025-09-09', '09/09/2025', a date object), else None."""
+    if v is None or isinstance(v, (int, float)):
+        return None
+    if hasattr(v, "year") and hasattr(v, "month"):
+        return (v.year, v.month, v.day)
+    status, ymd, _ = parse_date(str(v).strip()[:10], True, 1000, 3000)
+    return tuple(ymd) if status == "ok" and ymd else None
+
+
 def _test(t: Table, col: str, cond: Condition, v) -> bool:
     op = cond.op
     if op == "empty":
@@ -81,7 +91,11 @@ def _test(t: Table, col: str, cond: Condition, v) -> bool:
     if op == "not_empty":
         return not (v is None or str(v).strip() == "")
     if op in ("gt", "gte", "lt", "lte"):
-        a, b = _number(t, col, v), _number(t, col, cond.value)
+        da, db = as_date(v), as_date(cond.value)
+        if db is not None:                                    # 'Date >= 2025-09-09' compares dates
+            a, b = da, db
+        else:
+            a, b = _number(t, col, v), _number(t, col, cond.value)
         if a is None or b is None:
             return False
         return {"gt": a > b, "gte": a >= b, "lt": a < b, "lte": a <= b}[op]

@@ -285,3 +285,20 @@ def test_without_a_model_free_wording_is_explained(ctx):
 def test_a_plan_has_exactly_one_kind():
     with pytest.raises(ValueError):
         Plan(ask="a", answer="b")
+
+
+# ── shape-safe additions in Phase B: split a column, if / else ────────────────
+def test_split_column_and_classify_in_phase_b(ws):
+    from src.agent.operations import Classify, Rule, SplitColumn
+    ws.apply([SplitColumn(column="Date", into=["Year", "Month", "Day"], separator="-"),
+              Classify(column="Size", rules=[Rule(when=[Condition(column="Spend", op="gt", value=4000)], value="Big")], default="Small")],
+             "cs-0001", "x", ws.version(), None)
+    t = ws.load()[0]
+    assert t.data["Year"][:2] == ["2026", "2026"] and t.data["Month"][0] == "1"      # new columns get Phase B's rules: typed
+    assert t.data["Size"] == ["Small", "Small", "Small", "Small", "Big", "Big", "Big"]
+
+
+def test_reshaping_in_phase_b_points_to_phase_t(ws):
+    from src.agent.operations import Unpivot
+    with pytest.raises(AgentError, match="Phase T"):
+        ws.preview([Unpivot(columns=["Orders", "AOV"])], "cs-0001", "x")

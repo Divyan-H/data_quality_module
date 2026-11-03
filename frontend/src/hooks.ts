@@ -13,7 +13,7 @@ export function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   if (parts[0] === "run" && parts[1]) {
     const v = parts[2];
-    const view = v === "results" ? "results" : v && "ABCD".includes(v) && v.length === 1 ? (v as PhaseKey) : undefined;
+    const view = v === "results" ? "results" : v && "ABCDT".includes(v) && v.length === 1 ? (v as PhaseKey) : undefined;
     return { name: "run", runId: parts[1], view };
   }
   return { name: "home" };

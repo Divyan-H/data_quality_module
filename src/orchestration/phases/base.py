@@ -121,6 +121,7 @@ class Phase:
     describes: str = ""           # what the phase does, for the start screen
     uses_llm: bool = False
     needs_config: bool = False    # client config workbook is filled in and uploaded before the run
+    optional: bool = False        # may be skipped like a config phase (Phase T)
     review_name: str = ""         # file name of the review workbook the analyst edits
 
     # -- lifecycle -----------------------------------------------------
