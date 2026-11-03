@@ -1,7 +1,7 @@
 environment: dev
 data_path: ./data/
 api:
-  host: 127.0.0.1           # the service has no login yet (docs/prd/before_production.md P-02): keep it on this machine
+  host: 127.0.0.1           # this machine only; another address needs an access token (service.auth_token / DQ_API_TOKEN)
   port: 8000
 
 # Analyst web app (src/orchestration/settings.py documents every key).
