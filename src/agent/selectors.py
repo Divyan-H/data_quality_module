@@ -14,6 +14,7 @@ from src.hygiene.rules import find_expected_columns
 from src.hygiene.table import Table
 from src.hygiene.values import parse_date, parse_number
 
+from . import safe_regex
 from .errors import AgentError
 from .operations import Condition, RowFilter
 
@@ -119,10 +120,7 @@ def _test(t: Table, col: str, cond: Condition, v) -> bool:
     if op == "ends_with":
         return key.endswith(text_key(cond.value))
     if op == "matches":
-        try:
-            return re.search(str(cond.value), str(v), re.I) is not None
-        except re.error as e:
-            raise AgentError("bad_pattern", f"The pattern '{cond.value}' is not valid: {e}") from e
+        return safe_regex.compiled(str(cond.value), True).search(str(v)) is not None
     raise AgentError("bad_condition", f"Unknown condition '{op}'.")
 
 

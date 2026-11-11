@@ -21,6 +21,7 @@ import polars as pl
 
 from src.hygiene.cities import normalize
 
+from .. import safe_regex
 from ..errors import AgentError
 from ..executors import compile_formula, split_parts
 from ..operations import (AddColumn, Aggregate, AllocateByShare, AppendRows, BucketOthers, Classify, Condition,
@@ -216,10 +217,7 @@ def condition_expr(df: pl.DataFrame, cond: Condition, table: str = "") -> pl.Exp
     if op == "ends_with":
         return key.str.ends_with(text_key(v)).fill_null(False)
     if op == "matches":
-        try:
-            re.compile(str(v))
-        except re.error as e:
-            raise AgentError("bad_pattern", f"The pattern '{v}' is not valid: {e}") from e
+        safe_regex.check(str(v))
         return raw.cast(pl.String).str.contains(f"(?i){v}").fill_null(False)
     raise AgentError("bad_condition", f"Unknown condition '{op}'.")
 
@@ -323,10 +321,7 @@ def replace_text(tables: Tables, op: ReplaceText, fx: Effect) -> None:
     pattern = op.find if op.regex else re.escape(op.find)
     if op.ignore_case:
         pattern = f"(?i){pattern}"
-    try:
-        re.compile(pattern)
-    except re.error as e:
-        raise AgentError("bad_pattern", f"The pattern '{op.find}' is not valid: {e}") from e
+    safe_regex.check(pattern)
     repl = op.replace if op.regex else op.replace.replace("$", "$$")
     for name in with_tables(op.where, tables):
         df = tables[name]
@@ -495,10 +490,7 @@ def unpivot(tables: Tables, op: Unpivot, fx: Effect) -> None:
     if op.columns:
         cols = [column(df, c, name) for c in op.columns]
     else:
-        try:
-            rx = re.compile(op.pattern or "", re.I)
-        except re.error as e:
-            raise AgentError("bad_pattern", f"The pattern '{op.pattern}' is not valid: {e}") from e
+        rx = safe_regex.compiled(op.pattern or "", True)
         cols = [c for c in data_cols(df) if rx.search(c)]
     if not cols:
         raise AgentError("no_columns", f"No column of {name} matches {op.pattern!r}.")

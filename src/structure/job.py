@@ -40,6 +40,18 @@ class HttpEmitter:
             pass                                  # a lost progress event must not fail the job
 
 
+def inside(root: Path, ref: object, what: str) -> Path:
+    """`root / ref`, refused unless it stays inside `root`. A job body comes from another system: a ref such as
+    `../../etc` or an absolute path must never let a job read or write outside its storage."""
+    if not isinstance(ref, str) or not ref.strip() or "\x00" in ref:
+        raise JobFailed("input_invalid", f"{what} is not a storage path")
+    base = root.resolve()
+    path = (base / ref).resolve()
+    if path != base and base not in path.parents:
+        raise JobFailed("input_invalid", f"{what} points outside the job storage")
+    return path
+
+
 def load_edits(path: Path | None) -> list[dict]:
     if path is None or not path.exists():
         return []
@@ -56,7 +68,7 @@ def _inputs(body: dict, root: Path) -> dict:
     """Resolve every input of the body to a local path and check it exists (`input_not_found`, retryable)."""
     out = {"files": [], "config": None, "previous": None, "examples": None, "review_upload": None}
     for item in body["inputs"]:
-        path = root / item["ref"]
+        path = inside(root, item.get("ref"), "an input ref")
         if not path.exists():
             raise JobFailed("input_not_found", f"missing input {item['ref']}", retryable=True)
         kind = item["kind"]
@@ -98,7 +110,9 @@ def run_job(body: dict, storage_root: str | Path, emit=lambda e: None, is_cancel
         if body.get("job_type") != "data.structure":
             raise JobFailed("internal_error", f"unsupported job type {body.get('job_type')}")
         ins = _inputs(body, root)
-        out = root / body["output_prefix"]
+        out = inside(root, body.get("output_prefix"), "output_prefix")
+        if out == root.resolve():
+            raise JobFailed("input_invalid", "output_prefix must name a folder inside the job storage")
         job = {"files": ins["files"], "config": ins["config"], "output_dir": str(out),
                "previous_dir": str(ins["previous"]) if ins["previous"] else None, "examples_path": ins["examples"],
                "full": params.get("full", False), "llm": params.get("llm"), "llm_transport": llm_transport,
@@ -109,7 +123,7 @@ def run_job(body: dict, storage_root: str | Path, emit=lambda e: None, is_cancel
             st = resolve_settings(ins["config"])
         except ConfigInvalid as e:
             raise JobFailed("config_invalid", str(e)) from e
-        existing = load_edits(root / st.cell_edits_ref["path"] if st.cell_edits_ref else None)
+        existing = load_edits(inside(root, st.cell_edits_ref.get("path"), "cell_edits_ref") if st.cell_edits_ref else None)
         patch, edits = None, existing
         if mode == "review_import":
             patch, edits = _review_import(job, ins, st, existing)

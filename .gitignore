@@ -11,3 +11,12 @@ frontend/dist/
 out_*/
 real_data_test/results/
 .pytest_cache/
+
+# Word lock files
+~$*
+# local artefacts
+dq_agent_branch.bundle
+.ruff_cache/
+.mypy_cache/
+*.db-wal
+*.db-shm

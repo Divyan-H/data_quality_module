@@ -40,7 +40,11 @@ class Job:
 
 
 class Busy(RuntimeError):
-    pass
+    """The run already has a job, or the service is at its job limit. Nothing was changed."""
+
+
+class LaunchFailed(RuntimeError):
+    """The worker process could not be started (after `before_start` ran)."""
 
 
 def kill_tree(pid: int) -> None:
@@ -77,7 +81,10 @@ class JobRunner:
 
     # ------------------------------------------------------------------ launch
     def launch(self, run_id: str, phase: str, action: str, params: dict | None = None,
-               upload: Path | None = None) -> Job:
+               upload: Path | None = None, before_start: Callable[[], None] | None = None) -> Job:
+        """Start a worker. `before_start` runs once the job slot is reserved and before the process starts: the place
+        for work that must not happen when the launch is refused (discarding the outputs a re-run replaces). If it
+        raises, the slot is released and nothing was started."""
         run = self.store.path(run_id)
         with self._lock:
             if run_id in self._jobs:
@@ -89,6 +96,13 @@ class JobRunner:
             folder.mkdir(parents=True)
             job = Job(job_id, run_id, phase, action, folder)
             self._jobs[run_id] = job
+        if before_start is not None:
+            try:
+                before_start()
+            except BaseException:
+                with self._lock:
+                    self._jobs.pop(run_id, None)
+                raise
         request = {"job_id": job_id, "run_dir": str(run), "phase": phase, "action": action, "params": params or {},
                    "upload": str(upload) if upload else None, "settings_path": self.settings_path,
                    "state": {"id": run_id}}
@@ -99,13 +113,14 @@ class JobRunner:
         if sys.platform == "win32":
             flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
         try:
-            job.proc = subprocess.Popen([sys.executable, "-W", "ignore", "-m", WORKER, str(folder)], cwd=REPO_ROOT,
-                                        env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                        stderr=(folder / "stderr.log").open("wb"), creationflags=flags)
-        except OSError:
+            with (folder / "stderr.log").open("wb") as err:           # the child keeps its own copy of the handle
+                job.proc = subprocess.Popen([sys.executable, "-W", "ignore", "-m", WORKER, str(folder)], cwd=REPO_ROOT,
+                                            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                            stderr=err, creationflags=flags)
+        except OSError as e:
             with self._lock:
                 self._jobs.pop(run_id, None)
-            raise
+            raise LaunchFailed(str(e)) from e
         threading.Thread(target=self._watch, args=(job,), name=f"job-{job_id}", daemon=True).start()
         return job
 

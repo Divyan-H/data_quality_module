@@ -17,6 +17,7 @@ from src.hygiene.rules import _num_text
 from src.hygiene.table import Table
 from src.hygiene.values import parse_number
 
+from . import safe_regex
 from .errors import AgentError
 from .operations import (SHAPE_OPS, AddColumn, Classify, RemoveRows, RenameColumn, ReplaceText, ReplaceValues,
                          ResolveFindings, RowFilter, Scale, SetValue, SplitColumn)
@@ -151,11 +152,7 @@ def replace_values(s: EditSession, op: ReplaceValues) -> None:
 
 # ── replace_text ────────────────────────────────────────────────────────────
 def replace_text(s: EditSession, op: ReplaceText) -> None:
-    flags = re.I if op.ignore_case else 0
-    try:
-        pattern = re.compile(op.find if op.regex else re.escape(op.find), flags)
-    except re.error as e:
-        raise AgentError("bad_pattern", f"The pattern '{op.find}' is not valid: {e}") from e
+    pattern = safe_regex.compiled(op.find if op.regex else re.escape(op.find), bool(op.ignore_case))
     for t, col in _with_column(s.tables, op.where.tables, op.column):
         for i in rows(t, op.where):
             v = t.data[col][i]
@@ -305,7 +302,7 @@ def split_parts(v: str | None, op: SplitColumn) -> list[str | None]:
     if v is None:
         return [None] * n
     if op.pattern is not None:
-        m = re.search(op.pattern, v)
+        m = safe_regex.compiled(op.pattern).search(v)
         parts = list(m.groups()) if m and m.groups() else []
     else:
         parts = [p.strip() for p in (v.split(op.separator, n - 1) if op.separator.strip() else v.split(None, n - 1))]
@@ -315,10 +312,7 @@ def split_parts(v: str | None, op: SplitColumn) -> list[str | None]:
 
 def split_column(s: EditSession, op: SplitColumn) -> None:
     if op.pattern is not None:
-        try:
-            re.compile(op.pattern)
-        except re.error as e:
-            raise AgentError("bad_pattern", f"The pattern '{op.pattern}' is not valid: {e}") from e
+        safe_regex.check(op.pattern)
     for t, col in _with_column(s.tables, op.tables, op.column):
         clash = [n for n in op.into if n in t.cols and n != col]
         if clash:

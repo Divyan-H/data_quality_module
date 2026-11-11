@@ -25,7 +25,7 @@ from src.orchestration.agent import JOB_ACTIONS as AGENT_ACTIONS, AgentControlle
 from src.orchestration.phases import ORDER, PHASES, following, previous
 from src.orchestration.phases.base import Paths, PhaseError, read_json
 from src.orchestration.phases.hygiene import fix_catalogue
-from src.orchestration.runner import Busy, Job, JobRunner, kill_orphan
+from src.orchestration.runner import Busy, Job, JobRunner, LaunchFailed, kill_orphan
 from src.orchestration.settings import ServiceSettings
 from src.security.uploads import (DATA_EXTENSIONS, LEGACY_EXTENSIONS, WORKBOOK_EXTENSIONS, UploadRejected, safe_filename,
                                   safe_relative_path, unique_name, valid_artifact_id)
@@ -283,14 +283,25 @@ class Pipeline:
                 params["table"] = ph["config"]["table"]
             if adapter.supports_agent:
                 params["recipes_dir"] = self.agent.recipes_dir()
-            self._clear_from(st, run, key, include_self=True)
+            # The old outputs are discarded only once the job slot is reserved: a refused launch (run busy, service at
+            # its job limit) must leave the phase's results exactly as they were.
             try:
-                job = self.runner.launch(run_id, key, "run", params)
+                job = self.runner.launch(run_id, key, "run", params,
+                                         before_start=lambda: self._clear_from(st, run, key, include_self=True))
             except Busy as e:
                 raise PipelineError(429, "busy", str(e)) from e
-            ph.update(status=RUNNING, attempt=ph["attempt"] + 1, params=params, started_at=now(), finished_at=None,
-                      error=None, upload_error=None, llm=llm_record)
-            st["job"] = {"id": job.id, "phase": key, "action": "run", "started_at": now(), "pid": job.proc.pid}
+            except LaunchFailed as e:               # outputs are already gone: record the failure instead of hiding it
+                log.error("could not start a worker for run %s phase %s: %s", run_id, key, e)
+                ph.update(status=FAILED, finished_at=now(), params=params, llm=llm_record,
+                          error={"code": "launch_failed", "message": "The job could not be started. Start the phase again."})
+                failed = True
+            else:
+                failed = False
+                ph.update(status=RUNNING, attempt=ph["attempt"] + 1, params=params, started_at=now(), finished_at=None,
+                          error=None, upload_error=None, llm=llm_record)
+                st["job"] = {"id": job.id, "phase": key, "action": "run", "started_at": now(), "pid": job.proc.pid}
+        if failed:
+            raise PipelineError(500, "launch_failed", "The job could not be started. Start the phase again.")
         return self.view(run_id)
 
     def cancel(self, run_id: str) -> dict:
