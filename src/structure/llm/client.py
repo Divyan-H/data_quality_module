@@ -80,9 +80,10 @@ class OllamaClient:
         return True
 
     def chat(self, prompt: str, schema: dict, seed: int, temperature: float, num_predict: int = NUM_PREDICT,
-             system: str | None = None) -> dict | None:
+             system: str | None = None, prompt_version: str | None = None) -> dict | None:
         """One vote. Retries once on a transport error or an unparsable answer; None counts as no answer.
-        `num_predict` and `system` are for callers that need a longer answer or a separate system prompt (the agent)."""
+        `num_predict` and `system` are for callers that need a longer answer or a separate system prompt (the agent);
+        `prompt_version` is not sent to the model: it labels the call in the audit log."""
         messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
         payload = {"model": self.model, "stream": False, "format": schema, "messages": messages,
                    "options": {"num_ctx": NUM_CTX, "num_predict": num_predict, "seed": seed,

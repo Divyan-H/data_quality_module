@@ -19,10 +19,12 @@ from pathlib import Path
 
 from src.orchestration.phases import PHASES
 from src.orchestration.phases.base import Context, Emitter, EventLogHandler, PhaseError
+from src.storage.audit import AuditLog
 
 
-def _instrument_llm(emit: Emitter) -> dict:
-    """Show LLM activity live: count and time every call the structure review makes (no prompt or answer is logged)."""
+def _instrument_llm(emit: Emitter, audit: AuditLog, run_id: str | None, phase: str, purpose: str) -> dict:
+    """Show LLM activity live and record every call to the local model in the audit database: model, build digest,
+    timing, sizes and whether an answer came back. The prompt and the answer themselves are never stored."""
     from src.structure.llm.client import OllamaClient
     original = OllamaClient.chat
     state = {"calls": 0, "failed": 0, "seconds": 0.0}
@@ -30,9 +32,14 @@ def _instrument_llm(emit: Emitter) -> dict:
     def chat(self, prompt, schema, seed, temperature, **kw):
         t0 = time.monotonic()
         out = original(self, prompt, schema, seed, temperature, **kw)
+        took = time.monotonic() - t0
         state["calls"] += 1
         state["failed"] += out is None
-        state["seconds"] += time.monotonic() - t0
+        state["seconds"] += took
+        audit.llm_call(purpose=purpose, model=self.model, digest=self.digest, latency_ms=int(took * 1000),
+                       outcome="ok" if out is not None else "no_answer", run_id=run_id, phase=phase,
+                       prompt_version=kw.get("prompt_version"), prompt_chars=len(prompt) + len(kw.get("system") or ""),
+                       answer_chars=len(json.dumps(out)) if out is not None else 0, attempt=state["calls"])
         emit.stage("LLM review", None, f"{state['calls']} call(s) to {self.model}, {state['seconds']:.0f}s so far"
                    + (f", {state['failed']} unanswered" if state["failed"] else ""))
         return out
@@ -52,10 +59,13 @@ def main(job_dir: str) -> int:
         lg = logging.getLogger(name)
         lg.setLevel(logging.INFO)
         lg.addHandler(handler)               # also keeps the phases from adding their own console handler
-    llm_state = _instrument_llm(emit)
     phase = PHASES[req["phase"]]
+    action = req["action"]
+    audit = AuditLog(req.get("audit_db"))
+    llm_state = _instrument_llm(emit, audit, (req.get("state") or {}).get("id"), phase.key,
+                                "agent.plan" if action.startswith("agent_") else "structure.review")
     ctx = Context(run=run, emit=emit, settings_path=req["settings_path"], state=req.get("state", {}))
-    action, params = req["action"], req.get("params", {})
+    params = req.get("params", {})
     result: dict
     try:
         emit.stage("starting", 0)

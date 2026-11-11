@@ -27,6 +27,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SETTINGS = REPO_ROOT / "config" / "settings.yaml"
+ENVIRONMENTS = ("development", "test", "staging", "production")
 
 
 @dataclass
@@ -45,6 +46,11 @@ class ServiceSettings:
     auth_token: str | None = None               # None = no access control (the service must stay on 127.0.0.1)
     retention_days: int | None = None
     min_free_disk_mb: int = 1024
+    env: str = "development"                    # DQ_ENV: development | test | staging | production
+    audit_db: Path | None = None                # None = <workspace>/../audit.db
+    shutdown_grace_s: int = 0                   # on shutdown, let running jobs finish for this long before stopping them
+    sign_in_max_failures: int = 5               # failed sign-ins from one address before it is locked out ...
+    sign_in_lockout_s: int = 300                # ... for this long
     frontend_dir: Path = REPO_ROOT / "frontend" / "dist"
     cors_origins: list[str] = field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
 
@@ -78,7 +84,38 @@ def load_service_settings(path: str | None = None, **overrides) -> ServiceSettin
         s.hygiene_defaults_off = list(raw["hygiene_defaults_off"] or [])
     if raw.get("cors_origins") is not None:
         s.cors_origins = list(raw["cors_origins"])
+    s.env = (os.environ.get("DQ_ENV") or raw.get("env") or s.env).lower()
+    if s.env not in ENVIRONMENTS:
+        raise ValueError(f"DQ_ENV must be one of {', '.join(ENVIRONMENTS)}; got '{s.env}'")
+    if os.environ.get("DQ_SHUTDOWN_GRACE_S") or raw.get("shutdown_grace_s"):
+        s.shutdown_grace_s = int(os.environ.get("DQ_SHUTDOWN_GRACE_S") or raw["shutdown_grace_s"])
+    if os.environ.get("DQ_MAX_CONCURRENT_JOBS"):
+        s.max_concurrent_jobs = int(os.environ["DQ_MAX_CONCURRENT_JOBS"])
+    if os.environ.get("DQ_CORS_ORIGINS") is not None:
+        s.cors_origins = [o.strip() for o in os.environ["DQ_CORS_ORIGINS"].split(",") if o.strip()]
+    elif s.env == "production" and raw.get("cors_origins") is None:
+        s.cors_origins = []                     # the built app is served from the same origin; no cross-origin access
+    audit = os.environ.get("DQ_AUDIT_DB") or raw.get("audit_db")
     for k, v in overrides.items():
         setattr(s, k, v)
     s.workspace = Path(s.workspace)
+    if audit and "audit_db" not in overrides:
+        s.audit_db = Path(audit) if Path(audit).is_absolute() else REPO_ROOT / audit
+    if s.audit_db is None:
+        s.audit_db = s.workspace.parent / "audit.db"
     return s
+
+
+def production_problems(s: ServiceSettings, host: str) -> list[str]:
+    """What must be fixed before the service may start with DQ_ENV=production. Empty = good to go."""
+    problems = []
+    if not s.auth_token:
+        problems.append("DQ_API_TOKEN is not set: production needs an access token (16+ characters).")
+    if not os.environ.get("STRUCTURE_HASH_KEY"):
+        problems.append("STRUCTURE_HASH_KEY is not set: Phase A would hash values with the public development key.")
+    if os.environ.get("DQ_ALLOW_UNAUTHENTICATED") == "1":
+        problems.append("DQ_ALLOW_UNAUTHENTICATED=1 is not allowed in production.")
+    if os.environ.get("STRUCTURE_LLM_ALLOW_REMOTE") == "1" and not os.environ.get("DQ_ACK_REMOTE_LLM"):
+        problems.append("STRUCTURE_LLM_ALLOW_REMOTE=1 lets client data leave this machine for the model. Set "
+                        "DQ_ACK_REMOTE_LLM=1 as well to confirm that is intended.")
+    return problems

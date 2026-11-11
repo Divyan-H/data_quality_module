@@ -6,7 +6,6 @@ matches nothing, or more than one column, is an error the planner turns into a q
 """
 from __future__ import annotations
 
-import re
 from fnmatch import fnmatch
 
 from src.hygiene.cities import normalize

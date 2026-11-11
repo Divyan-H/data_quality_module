@@ -197,14 +197,19 @@ class AgentController:
             raise PipelineError(404, "no_such_changeset", f"There is no change {changeset}.")
         if cs.status != "proposed":
             raise PipelineError(409, "not_proposed", f"Change {changeset} is {cs.status}; only a proposed change can be applied.")
-        return self._launch(run_id, key, "agent_apply", {"changeset": changeset})
+        view = self._launch(run_id, key, "agent_apply", {"changeset": changeset})
+        self.pipe.audit.record("agent.apply_requested", run_id, key, changeset=changeset, source=cs.source,
+                               operations=[op.get("op") for op in cs.plan])
+        return view
 
     def undo(self, run_id: str, key: str) -> dict:
         from src.orchestration.orchestrator import PipelineError
         last = AgentStore(self.pipe.store.path(run_id), key).last_applied()
         if last is None or not last.has_snapshot:
             raise PipelineError(409, "nothing_to_undo", "There is no applied change that can be undone.")
-        return self._launch(run_id, key, "agent_undo", {})
+        view = self._launch(run_id, key, "agent_undo", {})
+        self.pipe.audit.record("agent.undo_requested", run_id, key, changeset=last.id)
+        return view
 
     def discard(self, run_id: str, key: str, changeset: str) -> dict:
         from src.agent.service import AgentService
@@ -218,6 +223,7 @@ class AgentController:
             svc.discard(changeset)
         except AgentError as e:
             raise self._error(e) from e
+        self.pipe.audit.record("agent.discarded", run_id, key, changeset=changeset)
         return self.state(run_id, key)
 
     # ── job outcome (runner's watcher thread, inside the state lock) ──────────

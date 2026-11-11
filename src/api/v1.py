@@ -5,13 +5,16 @@ Thin on purpose: validate the request, call `Pipeline`, shape the answer. No pha
 from __future__ import annotations
 
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Query, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+from src.observability import metrics
 from src.orchestration.orchestrator import Pipeline, PipelineError
+from src.orchestration.runner import LaunchFailed
 
 CHUNK = 1 << 20
 MEDIA = {".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".json": "application/json",
@@ -82,6 +85,28 @@ def make_router(pipe: Pipeline) -> APIRouter:
         """200 when this instance can take work (workspace writable, enough free disk), else 503, with the checks."""
         ok, checks = pipe.ready()
         return JSONResponse({"ready": ok, "checks": checks}, status_code=200 if ok else 503)
+
+    @r.get("/metrics", response_class=PlainTextResponse)
+    def metrics_text() -> str:
+        """Prometheus text format: request and job counters, plus gauges read now."""
+        _, checks = pipe.ready()
+        return metrics.render({
+            "dq_jobs_active": ("Worker jobs running now", pipe.runner.active_count()),
+            "dq_jobs_limit": ("Configured limit of concurrent jobs", pipe.settings.max_concurrent_jobs),
+            "dq_workspace_free_mb": ("Free space on the workspace disk, MB", checks["free_disk_mb"]),
+            "dq_llm_available": ("1 when the local model answers", 1 if checks["llm_available"] else 0),
+            "dq_uptime_seconds": ("Seconds since the process started", time.time() - metrics.STARTED)})
+
+    @r.get("/audit")
+    def audit_events(run_id: str | None = Query(None, pattern="^[0-9a-f]{12,32}$"), limit: int = Query(200, ge=1, le=1000),
+                     before_id: int | None = Query(None, ge=1)) -> dict:
+        """Who did what, newest first: one row per accepted action (start, accept, upload, apply, undo, delete...)."""
+        return {"events": pipe.audit.events(run_id, limit, before_id)}
+
+    @r.get("/audit/llm")
+    def audit_llm(run_id: str | None = Query(None, pattern="^[0-9a-f]{12,32}$"), limit: int = Query(200, ge=1, le=1000)) -> dict:
+        """Every call to the local model: model, build, timing, outcome. Never the prompt or the answer."""
+        return {"calls": pipe.audit.llm_calls(run_id, limit), "summary": pipe.audit.llm_summary()}
 
     @r.get("/options")
     def options() -> dict:
@@ -263,6 +288,11 @@ def install_error_handlers(app) -> None:
     async def _missing(_: Request, e: RunNotFound):
         return JSONResponse({"error": {"code": "run_not_found", "message": "This run does not exist (it may have been deleted)."}},
                             status_code=404)
+
+    @app.exception_handler(LaunchFailed)
+    async def _launch(_: Request, e: LaunchFailed):
+        return JSONResponse({"error": {"code": "launch_failed", "message": "The job could not be started. Try again."}},
+                            status_code=503)
 
     @app.exception_handler(UploadRejected)
     async def _rejected(_: Request, e: UploadRejected):

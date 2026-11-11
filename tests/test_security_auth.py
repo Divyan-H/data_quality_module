@@ -63,10 +63,10 @@ def test_the_server_will_not_listen_on_a_network_address_without_a_token(monkeyp
     with pytest.raises(SystemExit, match="without an access token"):
         api_server.start_api_server({"host": "0.0.0.0", "port": 0})
     started = []
-    monkeypatch.setattr("uvicorn.run", lambda app, host, port: started.append(host))
+    monkeypatch.setattr("uvicorn.run", lambda app, host, port, **options: started.append((host, options["proxy_headers"])))
     monkeypatch.setenv("DQ_API_TOKEN", TOKEN)
     api_server.start_api_server({"host": "0.0.0.0", "port": 0})
-    assert started == ["0.0.0.0"]
+    assert started == [("0.0.0.0", True)]
 
 
 def test_job_callbacks_only_go_to_allowed_hosts(monkeypatch, tmp_path):
@@ -75,8 +75,9 @@ def test_job_callbacks_only_go_to_allowed_hosts(monkeypatch, tmp_path):
     monkeypatch.setenv("STRUCTURE_CALLBACK_HOSTS", "gateway.internal")
     assert api_server.callback_allowed("https://gateway.internal/cb") and not api_server.callback_allowed("http://169.254.169.254/")
     with TestClient(create_app(str(tmp_path))) as c:
-        r = c.post("/jobs", json={"job_id": "j1", "callback_url": "http://169.254.169.254/latest", "job_token": "t"})
-        assert r.status_code == 400
+        r = c.post("/jobs", json={"job_id": "j1", "job_type": "data.structure", "output_prefix": "out",
+                                  "callback_url": "http://169.254.169.254/latest", "job_token": "t"})
+        assert r.status_code == 400 and "callback_url" in r.json()["error"]["message"]
 
 
 def test_precheck_refuses_an_oversized_body(monkeypatch, tmp_path):

@@ -11,6 +11,7 @@ analyst is asked about the LLM. HTTP knows nothing of this; it only calls the me
 """
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import shutil
@@ -30,6 +31,8 @@ from src.orchestration.settings import ServiceSettings
 from src.security.uploads import (DATA_EXTENSIONS, LEGACY_EXTENSIONS, WORKBOOK_EXTENSIONS, UploadRejected, safe_filename,
                                   safe_relative_path, unique_name, valid_artifact_id)
 from src.structure.readers import find_libreoffice
+from src.observability import metrics
+from src.storage.audit import AuditLog
 from src.storage.run_store import RunNotFound, RunStore, now
 
 LOCKED, READY, RUNNING, REVIEW, ACCEPTED, FAILED, CANCELLED = (
@@ -72,12 +75,28 @@ def _blank_phase(key: str, status: str) -> dict:
             "config": {"uploaded": False, "valid": False, "name": None, "table": None, "preview": None, "error": None}}
 
 
+def audited(action: str, detail=None):
+    """Record a successful Pipeline call in the audit log: `action`, the run, the phase (when the second argument is
+    a phase key) and `detail(args, kwargs, result)` -> small value-free facts. A refused call records nothing."""
+    def wrap(fn):
+        @functools.wraps(fn)
+        def inner(self, run_id, *args, **kwargs):
+            result = fn(self, run_id, *args, **kwargs)
+            phase = args[0] if args and isinstance(args[0], str) and args[0] in PHASES else None
+            self.audit.record(action, run_id, phase, **(detail(args, kwargs, result) if detail else {}))
+            return result
+        return inner
+    return wrap
+
+
 class Pipeline:
     def __init__(self, settings: ServiceSettings, store: RunStore | None = None, runner: JobRunner | None = None):
         self.settings = settings
         self.store = store or RunStore(settings.workspace)
+        self.audit = AuditLog(settings.audit_db)
         self.runner = runner or JobRunner(self.store, settings.settings_path, self._finished,
-                                          settings.max_concurrent_jobs, settings.job_timeout_min * 60)
+                                          settings.max_concurrent_jobs, settings.job_timeout_min * 60,
+                                          audit_db=settings.audit_db)
         self._sync_locks: dict[str, threading.Lock] = {}
         self.agent = AgentController(self)
         self._stop = threading.Event()
@@ -147,8 +166,10 @@ class Pipeline:
             shutil.move(str(tmp), dst)
             listed.append({"path": rel, "bytes": dst.stat().st_size})
         self.store.update(run_id, lambda s: s.update(inputs=listed))
+        self.audit.record("run.created", run_id, files=len(listed), bytes=total, llm=state["options"]["llm"])
         return run_id
 
+    @audited("run.deleted")
     def delete_run(self, run_id: str) -> None:
         if self.runner.active(run_id):
             self.runner.cancel(run_id)
@@ -254,6 +275,7 @@ class Pipeline:
                 {"requested": "on", "used": None, "model": s.model, "calls": None, "reason": None})
 
     # ------------------------------------------------------------------ actions
+    @audited("phase.started", lambda a, k, r: {"restart": bool((a[1] if len(a) > 1 and a[1] else k.get("options") or {}).get("restart"))})
     def start(self, run_id: str, key: str, options: dict | None = None) -> dict:
         options = options or {}
         adapter = self._phase(key)
@@ -304,6 +326,7 @@ class Pipeline:
             raise PipelineError(500, "launch_failed", "The job could not be started. Start the phase again.")
         return self.view(run_id)
 
+    @audited("job.cancelled")
     def cancel(self, run_id: str) -> dict:
         if not self.runner.cancel(run_id):
             raise PipelineError(409, "nothing_running", "No job is running for this run.")
@@ -312,6 +335,7 @@ class Pipeline:
             job.done.wait(15)
         return self.view(run_id)
 
+    @audited("phase.accepted")
     def accept(self, run_id: str, key: str) -> dict:
         adapter = self._phase(key)
         run = self.store.path(run_id)
@@ -332,6 +356,7 @@ class Pipeline:
                 st["phases"][nxt[0]]["status"] = READY
         return self.view(run_id)
 
+    @audited("tables.selected", lambda a, k, r: {"tables": len(a[0]) if a else None})
     def select_tables(self, run_id: str, refs: list[str]) -> dict:
         """Keep only `refs` of Phase A's tables for the next phases. Later phases that already ran on another choice
         are discarded (they are locked again until Phase A is accepted, or become ready when it already is)."""
@@ -354,6 +379,7 @@ class Pipeline:
                 st["phases"]["B"]["status"] = READY
         return self.view(run_id)
 
+    @audited("review.uploaded", lambda a, k, r: {"file": Path(str(a[2])).name[:120] if len(a) > 2 else None})
     def upload_review(self, run_id: str, key: str, src: Path, filename: str, options: dict | None = None) -> dict:
         """Check and apply an edited review workbook. Returns at once; the outcome arrives through the run's state."""
         options = options or {}
@@ -414,6 +440,7 @@ class Pipeline:
             raise PipelineError(504, "timeout", "The step took too long.")
         return outcome
 
+    @audited("phase.skipped")
     def skip(self, run_id: str, key: str, reason: str | None = None) -> dict:
         """Move on without running a config phase (C or D) or an optional one (T): for data the phase does not apply
         to, or when the analyst chooses to. The phase counts as accepted so the next one unlocks; it is marked skipped
@@ -478,6 +505,7 @@ class Pipeline:
                 tables = []
         return {"source": source, "asked": source == "run", "inputs": inputs, "yaml": text, "tables": tables}
 
+    @audited("inputs.saved")
     def set_inputs(self, run_id: str, raw) -> dict:
         """Validate and store the run's inputs. They are read when a phase starts, so a phase that already ran keeps its results."""
         run = self.store.path(run_id)
@@ -507,6 +535,7 @@ class Pipeline:
         path = Path(outcome["data"]["path"])
         return path, path.name
 
+    @audited("config.checked", lambda a, k, r: {"uploaded": len(a) > 1 and a[1] is not None})
     def upload_config(self, run_id: str, key: str, src: Path | None, filename: str | None, table: str | None) -> dict:
         """Validate a filled client config workbook against the data. src=None re-checks the one already stored."""
         self._config_phase(run_id, key)
@@ -579,6 +608,12 @@ class Pipeline:
                         ph["error"] = {"code": outcome.get("code"), "message": outcome["message"]}
             elif job.action in AGENT_ACTIONS:
                 self.agent.finished(st, run, job, outcome)
+        outcome_name = "ok" if outcome["ok"] else outcome.get("kind", "error")
+        metrics.inc("dq_jobs_finished_total", "Worker jobs finished, by phase, action and outcome",
+                    phase=job.phase, action=job.action, outcome=outcome_name)
+        if job.action in ("run", "review") or job.action in AGENT_ACTIONS:      # config probes are not worth a row
+            self.audit.record("job.finished", job.run_id, job.phase, actor="service", job=job.id, job_action=job.action,
+                              outcome=outcome_name, code=outcome.get("code"), llm_calls=outcome.get("llm_calls"))
         try:
             self.store.update(job.run_id, apply)
         except RunNotFound:
@@ -623,8 +658,12 @@ class Pipeline:
         items, cursor = self.store.events(run_id, after)
         return {"events": items, "cursor": cursor}
 
-    def shutdown(self) -> None:
+    def shutdown(self, grace_s: float = 0) -> None:
+        """Stop the background work. With `grace_s`, running jobs get that long to finish first (a deploy should not
+        throw away a phase that is seconds from done); whatever is still running afterwards is stopped and shows as
+        interrupted when the service comes back."""
         self._stop.set()
+        self.runner.drain(grace_s)
         self.runner.shutdown()
 
     # ------------------------------------------------------------------ operations: disk, readiness, retention
@@ -676,6 +715,7 @@ class Pipeline:
                 try:
                     self.store.delete(st["id"])
                     gone.append(st["id"])
+                    self.audit.record("run.purged", st["id"], actor="service", retention_days=days)
                 except (RunNotFound, OSError):
                     continue
         if gone:

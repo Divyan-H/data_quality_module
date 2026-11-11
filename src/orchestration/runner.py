@@ -18,6 +18,7 @@ from typing import Callable
 
 import psutil
 
+from src.observability import metrics
 from src.orchestration.settings import REPO_ROOT
 from src.storage.run_store import RunStore
 
@@ -64,10 +65,12 @@ def kill_tree(pid: int) -> None:
 
 class JobRunner:
     def __init__(self, store: RunStore, settings_path: str, on_finish: Callable[[Job, dict], None],
-                 max_jobs: int = 2, timeout_s: int = 3 * 3600):
+                 max_jobs: int = 2, timeout_s: int = 3 * 3600, audit_db: Path | None = None):
         self.store, self.settings_path, self.on_finish = store, settings_path, on_finish
+        self.audit_db = audit_db
         self.max_jobs, self.timeout_s = max_jobs, timeout_s
         self._jobs: dict[str, Job] = {}            # run_id -> its active job
+        self._draining = False
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------ queries
@@ -87,6 +90,8 @@ class JobRunner:
         raises, the slot is released and nothing was started."""
         run = self.store.path(run_id)
         with self._lock:
+            if self._draining:
+                raise Busy("The service is shutting down; try again once it is back.")
             if run_id in self._jobs:
                 raise Busy("This run already has a job in progress.")
             if len(self._jobs) >= self.max_jobs:
@@ -105,6 +110,7 @@ class JobRunner:
                 raise
         request = {"job_id": job_id, "run_dir": str(run), "phase": phase, "action": action, "params": params or {},
                    "upload": str(upload) if upload else None, "settings_path": self.settings_path,
+                   "audit_db": str(self.audit_db) if self.audit_db else None,
                    "state": {"id": run_id}}
         (folder / "request.json").write_text(json.dumps(request), encoding="utf8")
         env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
@@ -121,6 +127,7 @@ class JobRunner:
             with self._lock:
                 self._jobs.pop(run_id, None)
             raise LaunchFailed(str(e)) from e
+        metrics.inc("dq_jobs_started_total", "Worker jobs started, by phase and action", phase=phase, action=action)
         threading.Thread(target=self._watch, args=(job,), name=f"job-{job_id}", daemon=True).start()
         return job
 
@@ -176,6 +183,16 @@ class JobRunner:
     @staticmethod
     def wait(job: Job, timeout: float) -> dict | None:
         return job.outcome if job.done.wait(timeout) else None
+
+    def drain(self, grace_s: float) -> bool:
+        """Refuse new jobs and wait up to `grace_s` for the running ones. True = none is left."""
+        import time
+        with self._lock:
+            self._draining = True
+        deadline = time.monotonic() + max(0.0, grace_s)
+        while self.active_count() and time.monotonic() < deadline:
+            time.sleep(0.2)
+        return self.active_count() == 0
 
     def shutdown(self) -> None:
         for job in list(self._jobs.values()):
