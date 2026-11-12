@@ -73,7 +73,7 @@ def authorized(request: Request, token: str) -> bool:
     if header[:7].lower() == "bearer " and hmac.compare_digest(header[7:].strip().encode(), token.encode()):
         return True
     cookie = request.cookies.get(COOKIE)
-    return bool(cookie) and hmac.compare_digest(cookie.encode(), session_value(token).encode())
+    return cookie is not None and hmac.compare_digest(cookie.encode(), session_value(token).encode())
 
 
 def needs_token(path: str) -> bool:

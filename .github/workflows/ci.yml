@@ -2,7 +2,15 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
@@ -14,12 +22,25 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install
-        run: pip install -r requirements-dev.txt
-      - name: Lint (bugs only, see ruff.toml)
+          cache-dependency-path: requirements-dev.txt
+      - name: Install the pinned dependencies (hashes checked)
+        run: pip install --require-hashes -r requirements-dev.txt
+      - name: Lint
         run: ruff check src tests
-      - name: Tests
+      - name: Type check (infrastructure packages)
+        run: mypy src/api src/orchestration src/storage src/security src/observability
+      - name: Security lint
+        run: bandit -q -c pyproject.toml -r src -ll
+      - name: Known vulnerabilities in dependencies
+        run: pip-audit -r requirements.txt --disable-pip
+      - name: Tests (includes the agent evaluation gate and the audit regression tests)
         run: python -m pytest -q -n auto
+      - name: Agent evaluation report (command parser baseline)
+        run: python -m src.agent.evaluation --show failures --out eval-parser-baseline.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-evaluation
+          path: eval-parser-baseline.json
 
   frontend:
     runs-on: ubuntu-latest
@@ -35,6 +56,31 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t dq-service:ci .
+      - name: Start it and wait until it is ready
+        run: |
+          docker run -d --init --name dq -p 8000:8000 \
+            -e DQ_API_TOKEN=ci-token-0123456789abcdef -e STRUCTURE_HASH_KEY=$(openssl rand -hex 32) dq-service:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/api/v1/ready && break; sleep 2; done
+          curl -fsS http://127.0.0.1:8000/api/v1/ready
+      - name: Smoke test (signed in, security headers, runs as non-root)
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/runs)" = 401
+          curl -fsS -H "Authorization: Bearer ci-token-0123456789abcdef" http://127.0.0.1:8000/api/v1/runs
+          curl -sI http://127.0.0.1:8000/ | grep -i "content-security-policy"
+          test "$(docker exec dq id -u)" = 10001
+      - name: Logs on failure
+        if: failure()
+        run: docker logs dq

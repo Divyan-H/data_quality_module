@@ -81,7 +81,7 @@ def letter_index(ref: str) -> int:
 
 def finding_id(code: str, key: tuple) -> str:
     """Stable id of a finding: the same issue in the same data gives the same id on every run."""
-    return f"{code}-{hashlib.sha1(repr((code, key)).encode('utf8')).hexdigest()[:12]}"
+    return f"{code}-{hashlib.sha1(repr((code, key)).encode('utf8'), usedforsecurity=False).hexdigest()[:12]}"
 
 
 def same_value(old, new) -> bool:

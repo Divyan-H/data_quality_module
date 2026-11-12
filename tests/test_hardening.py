@@ -302,3 +302,17 @@ def test_production_start_up_checks(tmp_path, monkeypatch):
     monkeypatch.setenv("DQ_ENV", "prod")
     with pytest.raises(ValueError, match="DQ_ENV"):
         load_service_settings(workspace=tmp_path / "runs")
+
+
+def test_prompts_only_go_to_this_machine_or_an_allow_listed_host(monkeypatch):
+    from src.structure.llm.client import OllamaClient, host_allowed
+    for var in ("DQ_LLM_ALLOWED_HOSTS", "STRUCTURE_LLM_ALLOW_REMOTE"):
+        monkeypatch.delenv(var, raising=False)
+    assert host_allowed("http://localhost:11434") and host_allowed("http://127.0.0.1:11434") and host_allowed("http://[::1]:11434")
+    assert not host_allowed("http://ollama:11434") and not host_allowed("https://api.example.com/v1")
+    called = []
+    remote = OllamaClient("https://api.example.com", "m", None, transport=lambda path, payload: called.append(path) or {})
+    assert remote.check() is False and remote.unavailable_reason == "llm_url_not_loopback" and called == []   # nothing was sent
+    monkeypatch.setenv("DQ_LLM_ALLOWED_HOSTS", "ollama, models.internal")
+    assert host_allowed("http://ollama:11434") and host_allowed("http://MODELS.internal")
+    assert not host_allowed("http://ollama.evil.example:11434") and not host_allowed("https://api.example.com")

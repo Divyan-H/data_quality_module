@@ -1,89 +1,77 @@
-# Data Pipeline service (Data Quality / ETL module)
+# Data Pipeline (DQ) service
 
-Analyst web app and service for Phases A to D (structural intake, cell hygiene, time-series checks, trend checks) and the optional Phase T (transformations).
-Start it with `scripts\start.ps1` after `ollama serve`, open <http://127.0.0.1:8000>.
-How it works, the API, decisions and known gaps: [docs/dq_service_implementation_notes.md](docs/dq_service_implementation_notes.md).
-Each phase has its own notes in `docs/dq_[a-d]_implementation_notes.md`; the specs are in `docs/architecture/specs/`.
+Checks client spreadsheets for data-quality problems in phases, with a person reviewing each phase, and a chat agent
+that turns plain-English instructions into previewed, approved, undoable changes. Everything runs on your own
+machine or server; the agent uses a **local open-source model** (Ollama) and no client data leaves the host.
 
-**Access.** On your own machine nothing else is needed. To let others reach it, set an access token of 16+ characters
-(`DQ_API_TOKEN`, or `service.auth_token` in `config/settings.yaml`) and a non-loopback host: the browser shows a sign-in screen,
-other systems send `Authorization: Bearer <token>`. Without a token the service refuses to listen beyond `127.0.0.1`.
-Also worth setting on a shared server: `STRUCTURE_CALLBACK_HOSTS` (allowed callback hosts), `service.retention_days`
-(delete runs untouched for that long) and `service.min_free_disk_mb` (refuse new runs below it). Health: `GET /api/v1/ready`.
-
-**Development.** `pip install -r requirements-dev.txt`, then `ruff check src tests` and `python -m pytest -q -n auto`;
-in `frontend/`: `npm ci`, `npm run typecheck`, `npx vitest run`, `npm run build`. CI (`.github/workflows/ci.yml`) runs the same.
-
----
-
-*Below: the original template README this repository was created from.*
-
-# cuvity-project-template
-
-**This is a template repository, not an application.** It contains no
-working product code and none is intended to live here. Its only purpose
-is to be copied — once, per new module-repo — as a starting skeleton for
-teams using Claude as the primary generation engine, VS Code for editing
-and Git, and GitHub for governance.
-
-Do not build a product directly in this repo. Instantiate a new repo from
-it, then build there.
-
-## What's in this template
-
-| Folder | Purpose |
+| Phase | What it does |
 |---|---|
-| `/prompts` | Claude master prompt, reusable task-prompt library, usage guidelines |
-| `/docs` | architecture, PRD, decision-log, and module-README templates, plus governance docs |
-| `/src` | the pipeline service (see below) |
-| `/tests` | pytest suite: unit, phase, API and end-to-end acceptance tests |
-| `/config` | example application settings |
+| A · Structure | Finds tables, headers and footers inside messy workbooks |
+| B · Hygiene | 33 cell rules: dates, types, spellings, units, duplicates, negatives, multi-value cells |
+| C · Time series | Missing periods, repeats, cadence breaks |
+| D · Trends | Spikes, level shifts, monthly-to-weekly |
+| T · Transformations (optional) | Reshapes tables from a recipe: unpivot, split, allocate, aggregate, join |
+| Fix-with-agent | "Spend is in thousands" → typed operation → preview → Apply → Undo |
 
-## Modules (`/src`)
+## Quick start (your own machine)
 
-- `structure/` — Phase A: finds the real tables in each file (headers, merged cells, gap rows, footers)
-- `hygiene/` — Phase B: cell-level fixes and flags, with an audit of every change
-- `timeseries/` — Phase C: per-series time checks (no-execution runs, repeats, duplicate / missing periods)
-- `trends/` — Phase D: period-over-period trends, ratios, spend concentration
-- `common/` — what the phases share: table loading, values, cadence, one folder per checked table (`units.py`)
-- `orchestration/` — the A -> D state machine, worker processes, final files (`bundle.py`)
-- `api/` — the HTTP API and the analyst web app (`python -m src.api`)
-- `agent/` — Fix-with-agent: plain-English instructions -> previewed, audited, undoable changes ([docs/agent_implementation_notes.md](docs/agent_implementation_notes.md))
-- `agent/transform/` — Phase T, Transformations: reshape the checked tables with a recipe built in the chat; replaces the Porter scripts ([docs/transformations.md](docs/transformations.md))
-- `llm_interface/` — whether the local Ollama model is reachable
-- `security/` — upload name and path checks
-- `storage/` — run folders and their event log
+Needs Python 3.12+ and Node 22. Ollama is optional: without it the chat still understands its built-in commands.
 
-## Using this as a template
+```bash
+python -m venv .venv
+```
 
-1. Create a new repository from this template (or fork/copy it) under its
-   real name — do not keep repo-name placeholders from this template's
-   docs (e.g. `team_onboarding_guide.md`'s `cd <project-name>` step)
-   unresolved.
-2. Decide which modules from the menu above apply, delete the rest from
-   `/src`, `/tests`, `CODEOWNERS`, `team_access_matrix.md`, and
-   `high_level.md`.
-3. Create the GitHub teams referenced in `docs/governance/CODEOWNERS`
-   (`@tech-leads`, `@architects`, `@product-team`, `@engineering-team`,
-   `@devops-team`, `@admins`) or replace those handles with the real
-   ones for your org.
-4. Follow `docs/governance/admin_setup.md` to configure CI/CD *before*
-   enabling branch-protection status-check rules, then finish branch
-   protection per `docs/governance/branch_protection_policy.md`.
-5. Read `prompts/usage_guidelines.md` and
-   `docs/governance/team_onboarding_guide.md` before generating any
-   content with Claude.
-6. Read `docs/governance/workflow.md` for the branching model and the
-   per-module generation lifecycle.
+```bash
+source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
+```
 
-## Governance
+```bash
+pip install --require-hashes -r requirements-dev.txt
+```
 
-See `docs/governance/` for CODEOWNERS, branch protection policy, team
-access matrix, workflow, onboarding guide, repo setup checklist, and admin
-setup instructions. Template owner: Raghavan.
+```bash
+sh scripts/start.sh              # Windows: .\scripts\start.ps1
+```
 
-## Template versioning
+Open <http://127.0.0.1:8000>, upload `samples/phase_b_issues.xlsx`, run Phase A and B, then click **Fix with agent**.
 
-See `TEMPLATE_CHANGELOG.md` for what's changed in this template over time.
-When you fork/instantiate it, note which version you started from in your
-new repo's own `docs/decisions/decision_logs.md`.
+## Run it on a server (Docker)
+
+```bash
+cp .env.example .env             # set DQ_API_TOKEN, STRUCTURE_HASH_KEY, DQ_DOMAIN
+```
+
+```bash
+docker compose up -d --build
+```
+
+```bash
+docker compose --profile setup run --rm model-pull qwen2.5:7b-instruct
+```
+
+Details, backups, upgrades and rollback: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Documentation
+
+| Read this | For |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the parts fit, data flow, design decisions |
+| [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) | What lives where, dependency rules |
+| [docs/AI_AGENT.md](docs/AI_AGENT.md) | The agent: tools, guardrails, privacy, evaluation, model choice |
+| [docs/API.md](docs/API.md) | Every endpoint, error shape, examples |
+| [docs/DATABASE.md](docs/DATABASE.md) | Where state lives: run folders and the audit database |
+| [docs/SECURITY.md](docs/SECURITY.md) | Threat model, controls, what is not covered |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker Compose deployment, backup, rollback |
+| [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md) | Every setting |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Local setup, adding a rule / operation / phase |
+| [docs/TESTING.md](docs/TESTING.md) | Test layers, gates, what is and is not verified |
+| [CHANGELOG.md](CHANGELOG.md) | What changed |
+| [docs/audit/](docs/audit/) | The November 2026 engineering audit and readiness assessment |
+
+Phase specifications are in `docs/architecture/specs/`; per-phase implementation notes in `docs/dq_*_implementation_notes.md`.
+
+## Status
+
+Single-server deployment, one shared access token, human approval on every change. Not yet built: per-user accounts
+and client separation, multi-server operation, Phases E–G (mapping, load, pre-load checks). The honest list is in
+[docs/audit/02_final_assessment.md](docs/audit/02_final_assessment.md).

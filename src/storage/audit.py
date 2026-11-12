@@ -152,24 +152,18 @@ class AuditLog:
 
     def events(self, run_id: str | None = None, limit: int = 200, before_id: int | None = None) -> list[dict]:
         """Newest first. `before_id` pages backwards."""
-        where: list[str] = []
-        values: list[str | int] = []
-        if run_id:
-            where.append("run_id = ?")
-            values.append(run_id)
-        if before_id:
-            where.append("id < ?")
-            values.append(before_id)
-        sql = ("SELECT id, at, actor, action, run_id, phase, request_id, detail FROM audit_events"
-               + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY id DESC LIMIT ?")
-        rows = self._rows(sql, (*values, max(1, min(int(limit), 1000))))
+        # Constant SQL; every value is a bound parameter (an absent filter is passed as NULL).
+        rows = self._rows(
+            "SELECT id, at, actor, action, run_id, phase, request_id, detail FROM audit_events "
+            "WHERE (?1 IS NULL OR run_id = ?1) AND (?2 IS NULL OR id < ?2) ORDER BY id DESC LIMIT ?3",
+            (run_id or None, before_id or None, max(1, min(int(limit), 1000))))
         for r in rows:
             r["detail"] = json.loads(r["detail"])
         return rows
 
     def llm_calls(self, run_id: str | None = None, limit: int = 200) -> list[dict]:
-        sql = "SELECT * FROM llm_calls" + (" WHERE run_id = ?" if run_id else "") + " ORDER BY id DESC LIMIT ?"
-        return self._rows(sql, ((run_id,) if run_id else ()) + (max(1, min(int(limit), 1000)),))
+        return self._rows("SELECT * FROM llm_calls WHERE (?1 IS NULL OR run_id = ?1) ORDER BY id DESC LIMIT ?2",
+                          (run_id or None, max(1, min(int(limit), 1000))))
 
     def llm_summary(self) -> dict:
         """Totals for the metrics endpoint and the evaluation report."""

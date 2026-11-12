@@ -1,0 +1,34 @@
+# Reverse proxy for the DQ service. TLS is automatic: a public DQ_DOMAIN gets a Let's Encrypt certificate, `localhost`
+# or an internal name gets a certificate from Caddy's own CA (trust it on the analysts' machines, or supply your own
+# with `tls /path/cert.pem /path/key.pem`).
+{$DQ_DOMAIN:localhost} {
+	encode zstd gzip
+
+	# One run's files may total 500 MB (service.max_upload_mb); everything else is small.
+	@uploads path /api/v1/runs /api/v1/runs/*/phases/*/review /api/v1/runs/*/phases/*/config /review/precheck
+	request_body @uploads {
+		max_size 520MB
+	}
+	@other not path /api/v1/runs /api/v1/runs/*/phases/*/review /api/v1/runs/*/phases/*/config /review/precheck
+	request_body @other {
+		max_size 2MB
+	}
+
+	# Metrics are for the monitoring system on the internal network, not for browsers.
+	@metrics path /api/v1/metrics
+	respond @metrics 404
+
+	reverse_proxy app:8000 {
+		health_uri /api/v1/health
+		health_interval 15s
+		# Chat messages and config checks can take minutes on a CPU-only model.
+		transport http {
+			response_header_timeout 200s
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

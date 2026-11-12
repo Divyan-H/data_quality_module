@@ -1,0 +1,13 @@
+# Tests, lint, type check and security scans. Pinned in ../requirements-dev.txt:
+#   uv pip compile --generate-hashes --universal --python-version 3.12 requirements/dev.in -o requirements-dev.txt
+-r runtime.in
+-c ../requirements.txt
+pytest
+pytest-xdist
+httpx
+ruff
+mypy
+types-PyYAML
+types-psutil
+bandit
+pip-audit

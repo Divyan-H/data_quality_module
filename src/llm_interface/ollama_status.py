@@ -16,8 +16,8 @@ PROBE_TIMEOUT_S = 3.0
 CACHE_TTL_S = 5.0
 
 REASONS = {
-    "llm_url_not_loopback": "The LLM address is not on this machine and remote models are not allowed "
-                            "(set STRUCTURE_LLM_ALLOW_REMOTE=1 to allow it).",
+    "llm_url_not_loopback": "The model's address is not on this machine and its host is not on the allowed list "
+                            "(DQ_LLM_ALLOWED_HOSTS). Client data is only ever sent to an allowed host.",
     "llm_unreachable": "Ollama is not reachable. Start it with `ollama serve` in a terminal.",
     "llm_model_missing": "Ollama is running but the model is not installed. Install it with `ollama pull {model}`.",
     "llm_digest_mismatch": "The installed model does not match the pinned build.",

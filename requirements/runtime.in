@@ -1,0 +1,14 @@
+# What the service imports at run time. Pinned, with hashes, in ../requirements.txt:
+#   uv pip compile --generate-hashes --universal --python-version 3.12 requirements/runtime.in -o requirements.txt
+fastapi
+uvicorn
+python-multipart
+pydantic
+pyyaml
+polars
+pyarrow
+openpyxl
+lxml
+charset-normalizer
+psutil
+regex

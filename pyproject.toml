@@ -1,0 +1,26 @@
+[project]
+name = "dq-service"
+version = "1.1.0"
+description = "Data Pipeline (data quality) service: phased checks of client spreadsheets with human review and a local-model agent"
+requires-python = ">=3.12"
+readme = "README.md"
+# Exact versions with hashes live in requirements.txt (runtime) and requirements-dev.txt (tooling);
+# their sources are requirements/runtime.in and requirements/dev.in.
+
+[tool.mypy]
+python_version = "3.12"
+explicit_package_bases = true
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+# The gate (CI): the infrastructure packages must be clean.
+#   mypy src/api src/orchestration src/storage src/security src/observability
+# The domain packages (structure, hygiene, timeseries, trends, agent) are not type-clean yet; see docs/TESTING.md.
+
+[tool.bandit]
+exclude_dirs = ["tests", "frontend", "data"]
+# B101 assert: used for internal invariants, never for input validation.
+# B310 urlopen: every call site is guarded by a host allow-list (model) or a callback allow-list (job contract).
+# B404/B603 subprocess: fixed argument lists, no shell; the worker module and LibreOffice only.
+skips = ["B101", "B310", "B404", "B603"]

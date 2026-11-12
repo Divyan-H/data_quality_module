@@ -26,6 +26,17 @@ def is_loopback(url: str) -> bool:
         return False
 
 
+def host_allowed(url: str) -> bool:
+    """May prompts be sent to `url`? Yes for this machine. Any other host must be named in DQ_LLM_ALLOWED_HOSTS
+    (a comma-separated list of exact host names, e.g. the `ollama` container of the Compose file). The older
+    STRUCTURE_LLM_ALLOW_REMOTE=1 allows every host and is kept only for existing set-ups; prefer the list."""
+    if is_loopback(url):
+        return True
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    allowed = {h.strip().lower() for h in os.environ.get("DQ_LLM_ALLOWED_HOSTS", "").split(",") if h.strip()}
+    return host in allowed or os.environ.get("STRUCTURE_LLM_ALLOW_REMOTE") == "1"
+
+
 def vote_settings(votes: int, index: int) -> tuple[int, float]:
     """(seed, temperature) of vote `index`; a single vote is deterministic (spec 10.5)."""
     return (VOTE_SEEDS[0], 0.0) if votes == 1 else (VOTE_SEEDS[index], VOTE_TEMPERATURE)
@@ -60,7 +71,7 @@ class OllamaClient:
 
     def check(self) -> bool:
         """Loopback rule, then model digest. A different model is never used silently."""
-        if not is_loopback(self.url) and os.environ.get("STRUCTURE_LLM_ALLOW_REMOTE") != "1":
+        if not host_allowed(self.url):
             self.unavailable_reason = "llm_url_not_loopback"
             return False
         try:
