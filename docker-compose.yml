@@ -76,7 +76,7 @@ services:
     profiles: [setup]
     volumes:
       - ollama_models:/root/.ollama
-    entrypoint: ["/bin/sh", "-c", "ollama serve >/dev/null 2>&1 & sleep 3; ollama pull \"$0\"; status=$?; kill %1; exit $status"]
+    entrypoint: ["/bin/sh", "-c", "ollama serve >/dev/null 2>&1 & sleep 3; ollama pull \"$$0\"; code=$$?; kill %1; exit $$code"]
     command: ["llama3.2:3b"]
 
 networks:
