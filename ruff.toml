@@ -10,3 +10,6 @@ ignore = [
   "B008",   # FastAPI's File(...) / Form(...) defaults are the framework's idiom
   "B007",   # an unused loop variable is style, not a bug
 ]
+
+[lint.per-file-ignores]
+"tests/test_agent_registry.py" = ["F811"]   # pytest fixtures imported from test_agent_core

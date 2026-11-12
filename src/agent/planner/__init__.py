@@ -7,6 +7,7 @@ question, or a reply that changes nothing.
 """
 from __future__ import annotations
 
+from .. import registry
 from ..operations import Plan
 from .context import PlanningContext
 from .llm import LlmPlanner
@@ -20,6 +21,24 @@ class Planner:
         self.llm, self.privacy = llm, privacy
 
     def plan(self, text: str, ctx: PlanningContext) -> Plan:
+        """The plan for one instruction. Whoever made it (parser or model), a plan may only hold tools of this phase."""
+        return self._in_phase(self._plan(text, ctx), ctx)
+
+    @staticmethod
+    def _in_phase(plan: Plan, ctx: PlanningContext) -> Plan:
+        allowed = set(registry.names_for(ctx.phase))
+        outside = [op.op for op in plan.ops if op.op not in allowed]
+        if not outside:
+            return plan
+        name = outside[0].replace("_", " ")
+        if ctx.phase == "T":
+            return Plan(answer=f"'{name}' answers review items, which belong to the checking phases (B), not to "
+                               "Transformations. Open that phase's review to use it.", source=plan.source)
+        return Plan(answer=f"'{name}' changes the shape of the table, so it belongs in Phase T (Transformations), after "
+                           "the checks. Accept the checking phases, then open Phase T and ask there. Value fixes, new "
+                           "columns and splitting a column into columns work here.", source=plan.source)
+
+    def _plan(self, text: str, ctx: PlanningContext) -> Plan:
         parser = CommandParser(ctx)
         plan = parser.parse(text)
         if plan is not None:

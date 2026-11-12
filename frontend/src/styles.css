@@ -339,3 +339,8 @@ table.t td.new { color: var(--ok); font-weight: 600; }
 .signin { max-width: 420px; margin: 48px auto 0; }
 .signin h2 { margin-bottom: 6px; }
 input[type="password"] { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font: inherit; }
+
+/* guardrail confirmation on a proposal */
+.confirm-box { border: 1px solid var(--warn, #b45309); background: color-mix(in srgb, var(--warn, #b45309) 9%, transparent); border-radius: 8px; padding: 8px 10px; margin: 8px 0; font-size: 13px; }
+.confirm-box ul { margin: 4px 0 6px 18px; padding: 0; }
+.confirm-box .check { display: flex; gap: 6px; align-items: center; cursor: pointer; }

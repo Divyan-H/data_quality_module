@@ -311,7 +311,14 @@ class CommandParser(TransformCommands):
             if re.match(r"rename\s+(?:the\s+)?(?:column|header|field)", t, re.I):
                 self.column(m.group("a"))
             return None                                   # 'rename Banglore to Bangalore' is a value change
-        return Plan(ops=[RenameColumn(column=col, new_name=unquote(m.group("b")))])
+        # 'rename column CITY_NAME to City in AOV': the tail names a table, it is not part of the new name
+        table, new_name = None, m.group("b")
+        tail = re.search(r"\s+in\s+(?:the\s+)?(?:table\s+|sheet\s+)?(?P<t>[^,]+?)(?:\s+(?:table|sheet))?$", new_name, re.I)
+        if tail:                                           # only when that table really has the column being renamed
+            named = self.ctx.find_table(tail.group("t"))
+            if named is not None and col in self.ctx.columns_of(named):
+                table, new_name = named, new_name[:tail.start()]
+        return Plan(ops=[RenameColumn(column=col, new_name=unquote(new_name.strip()), tables=[table] if table else None)])
 
     def _add_column(self, t: str) -> Plan | None:
         m = re.match(r"(?:add|create|insert|make)\s+(?:a\s+)?(?:new\s+)?(?:column|field)\s+(?:called\s+|named\s+)?"

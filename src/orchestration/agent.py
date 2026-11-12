@@ -30,7 +30,7 @@ REVIEW, ACCEPTED, RUNNING, FAILED = "review", "accepted", "running", "failed"
 JOB_ACTIONS = ("agent_apply", "agent_undo")
 HTTP = {"no_such_changeset": 404, "no_such_table": 404, "not_proposed": 409, "stale_proposal": 409,
         "nothing_to_undo": 409, "not_ready": 409, "agent_not_available": 400, "empty_message": 400,
-        "message_too_long": 400}
+        "message_too_long": 400, "confirmation_required": 409, "pattern_too_slow": 400, "bad_pattern": 400}
 
 
 # ── worker side ─────────────────────────────────────────────────────────────
@@ -42,8 +42,10 @@ def build_service(phase, ctx, params: dict):
     llm = params.get("agent_llm") or {}
     planner = Planner(LlmPlanner(OllamaClient(None, llm["model"], None)) if llm.get("mode") == "on" else None)
     from src.agent.recipes import RecipeLibrary
+    from src.storage.audit import AuditLog
     return AgentService(phase.agent_workspace(ctx, params), AgentStore(ctx.run, phase.key), planner,
-                        RecipeLibrary(params.get("recipes_dir")))
+                        RecipeLibrary(params.get("recipes_dir")), audit=AuditLog(params.get("audit_db")),
+                        run_id=Path(ctx.run).name)
 
 
 def run_action(phase, ctx, action: str, params: dict) -> dict:
@@ -53,7 +55,7 @@ def run_action(phase, ctx, action: str, params: dict) -> dict:
         if action == "agent_message":
             return svc.message(params.get("text", ""))
         if action == "agent_apply":
-            return svc.apply(params.get("changeset", ""))
+            return svc.apply(params.get("changeset", ""), confirm=bool(params.get("confirm")))
         if action == "agent_undo":
             return svc.undo()
     except AgentError as e:
@@ -166,7 +168,8 @@ class AgentController:
         self._adapter(key)
         st = self.pipe.store.load(run_id)
         self._usable(st, key)
-        params = {**st["phases"][key]["params"], "text": text, "agent_llm": self._llm_params(), "recipes_dir": self.recipes_dir()}
+        params = {**st["phases"][key]["params"], "text": text, "agent_llm": self._llm_params(),
+                  "recipes_dir": self.recipes_dir(), "audit_db": str(self.pipe.settings.audit_db)}
         outcome = self.pipe._sync_job(run_id, key, "agent_message", params)
         if not outcome.get("ok"):
             raise PipelineError(HTTP.get(outcome.get("code"), 500 if outcome.get("kind") == "crash" else 400),
@@ -179,7 +182,8 @@ class AgentController:
         with self.pipe.store.edit(run_id) as st:
             self._usable(st, key)
             ph = st["phases"][key]
-            params = {**ph["params"], **extra, "agent_llm": {"mode": "off"}, "recipes_dir": self.recipes_dir()}
+            params = {**ph["params"], **extra, "agent_llm": {"mode": "off"}, "recipes_dir": self.recipes_dir(),
+                      "audit_db": str(self.pipe.settings.audit_db)}
             try:
                 job = self.pipe.runner.launch(run_id, key, action, params)
             except Busy as e:
@@ -190,14 +194,18 @@ class AgentController:
             st["job"] = {"id": job.id, "phase": key, "action": action, "started_at": now(), "pid": job.proc.pid}
         return self.pipe.view(run_id)
 
-    def apply(self, run_id: str, key: str, changeset: str) -> dict:
+    def apply(self, run_id: str, key: str, changeset: str, confirm: bool = False) -> dict:
+        from src.agent import guardrails
         from src.orchestration.orchestrator import PipelineError
         cs = AgentStore(self.pipe.store.path(run_id), key).get(changeset)
         if cs is None:
             raise PipelineError(404, "no_such_changeset", f"There is no change {changeset}.")
         if cs.status != "proposed":
             raise PipelineError(409, "not_proposed", f"Change {changeset} is {cs.status}; only a proposed change can be applied.")
-        view = self._launch(run_id, key, "agent_apply", {"changeset": changeset})
+        if guardrails.needs_confirmation(cs.review) and not confirm:
+            raise PipelineError(409, "confirmation_required", "This change needs an explicit confirmation: "
+                                + " ".join(cs.review["reasons"]), {"reasons": cs.review["reasons"]})
+        view = self._launch(run_id, key, "agent_apply", {"changeset": changeset, "confirm": bool(confirm)})
         self.pipe.audit.record("agent.apply_requested", run_id, key, changeset=changeset, source=cs.source,
                                operations=[op.get("op") for op in cs.plan])
         return view

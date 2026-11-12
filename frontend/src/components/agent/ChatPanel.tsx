@@ -53,12 +53,7 @@ export function ProposalCard({ cs, busy, onApply, onDiscard, onAgain }: {
         {p.follow_up_fixes > 0 ? ` Phase B's rules will also tidy ${p.follow_up_fixes} value(s).` : ""}
         {` ${p.open_items_after} review item(s) would stay open.`}
       </p>
-      {cs.status === "proposed" && (
-        <div className="row">
-          <button className="btn primary sm" onClick={onApply} disabled={busy}>Apply</button>
-          <button className="btn sm" onClick={onDiscard} disabled={busy}>Discard</button>
-        </div>
-      )}
+      {cs.status === "proposed" && <ApplyRow cs={cs} busy={busy} label="Apply" onApply={onApply} onDiscard={onDiscard} />}
       {cs.status === "stale" && (
         <div className="row">
           <span className="small muted">The data changed after this preview.</span>
@@ -67,6 +62,32 @@ export function ProposalCard({ cs, busy, onApply, onDiscard, onAgain }: {
       )}
       {cs.status === "failed" && cs.error && <p className="small bad-text">{cs.error}</p>}
     </div>
+  );
+}
+
+/** Apply / Discard. A change the guardrails marked "elevated" shows why and needs a tick before Apply is enabled. */
+export function ApplyRow({ cs, busy, label, onApply, onDiscard }: {
+  cs: ChangeSetView; busy: boolean; label: string; onApply: () => void; onDiscard: () => void;
+}) {
+  const elevated = cs.review?.level === "elevated";
+  const [checked, setChecked] = useState(false);
+  return (
+    <>
+      {elevated && (
+        <div className="confirm-box" role="group" aria-label="This change needs your confirmation">
+          <b>Check this one carefully.</b>
+          <ul>{cs.review!.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+          <label className="check">
+            <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} disabled={busy} />
+            I have checked the preview and want to apply it
+          </label>
+        </div>
+      )}
+      <div className="row">
+        <button className="btn primary sm" onClick={onApply} disabled={busy || (elevated && !checked)}>{label}</button>
+        <button className="btn sm" onClick={onDiscard} disabled={busy}>Discard</button>
+      </div>
+    </>
   );
 }
 
@@ -103,12 +124,7 @@ function TransformCard({ cs, p, st, busy, onApply, onDiscard, onAgain }: {
       )}
       {unmatched.length > 0 && <p className="small warn-text">Not found / not matched: {unmatched.slice(0, 8).map((u) => show(u)).join(", ")}{unmatched.length > 8 ? " …" : ""}</p>}
       {notes.map((n, i) => <p key={i} className="small muted">{n}</p>)}
-      {cs.status === "proposed" && (
-        <div className="row">
-          <button className="btn primary sm" onClick={onApply} disabled={busy}>Apply and add to the recipe</button>
-          <button className="btn sm" onClick={onDiscard} disabled={busy}>Discard</button>
-        </div>
-      )}
+      {cs.status === "proposed" && <ApplyRow cs={cs} busy={busy} label="Apply and add to the recipe" onApply={onApply} onDiscard={onDiscard} />}
       {cs.status === "stale" && (
         <div className="row">
           <span className="small muted">The tables changed after this preview.</span>

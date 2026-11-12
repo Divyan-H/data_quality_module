@@ -28,8 +28,10 @@ class AgentFlow(Flow):
         assert r.status_code == expect, r.text
         return r.json()
 
-    def apply(self, rid, cs, key="B", expect=200):
-        r = self.c.post(f"/api/v1/runs/{rid}/phases/{key}/agent/changesets/{cs}/apply")
+    def apply(self, rid, cs, key="B", expect=200, confirm=True):
+        """Apply a change-set. `confirm` answers the guardrails' second confirmation (tests/test_agent_guardrails.py
+        covers the refusal without it)."""
+        r = self.c.post(f"/api/v1/runs/{rid}/phases/{key}/agent/changesets/{cs}/apply", json={"confirm": confirm})
         assert r.status_code == expect, r.text
         if expect == 200:
             p = self.wait(rid, key)
@@ -199,3 +201,18 @@ def test_the_agent_is_refused_where_it_cannot_act(af, phase_b, weekly_files):
     r = af.c.post(f"/api/v1/runs/{phase_b}/phases/B/agent/messages", json={"text": ""})
     assert r.status_code == 422
     assert af.c.get("/api/v1/options").json()["agent"]["phases"] == ["B", "T"]
+
+
+def test_a_destructive_change_needs_an_explicit_confirmation_through_the_api(af, phase_b, app_client):
+    df, _ = af.table(phase_b)
+    reply = af.say(phase_b, "remove rows 3")["reply"]
+    cs = reply["changeset"]
+    assert cs["review"] == {"level": "elevated", "reasons": ["It removes rows."]}
+    assert af.agent(phase_b)["changesets"][cs["id"]]["review"]["level"] == "elevated"       # the screen can show why
+    refused = af.apply(phase_b, cs["id"], expect=409, confirm=False)
+    assert refused["error"]["code"] == "confirmation_required" and refused["error"]["reasons"] == ["It removes rows."]
+    assert af.table(phase_b)[0].height == df.height                                          # nothing changed
+    af.apply(phase_b, cs["id"], confirm=True)
+    assert af.table(phase_b)[0].height == df.height - 1
+    actions = [e["action"] for e in app_client.get(f"/api/v1/audit?run_id={phase_b}").json()["events"]]
+    assert actions[:3] == ["job.finished", "agent.applied", "agent.apply_requested"] and "agent.planned" in actions

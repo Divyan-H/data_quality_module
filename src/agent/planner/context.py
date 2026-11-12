@@ -72,9 +72,10 @@ def rules_for_words(text: str) -> list[str]:
 
 
 class PlanningContext:
-    def __init__(self, tables: list[Table], phase: str = "B"):
+    def __init__(self, tables: list[Table], phase: str = "B", history: list[dict] | None = None):
         self.tables = tables
         self.phase = phase                      # "B": value changes only; "T": reshaping too
+        self.history = history or []            # earlier turns {role, text, ops?, status?} for the model (memory)
         self._value_index: dict[str, dict[str, set[str]]] | None = None
 
     # ── tables ───────────────────────────────────────────────────────────────

@@ -201,6 +201,8 @@ export interface ChangeSetView {
   applied_at: string | null;
   undone_at: string | null;
   error: string | null;
+  /** Guardrails: an "elevated" change (removes rows, columns or tables, or rewrites many cells) must be confirmed. */
+  review?: { level: "normal" | "elevated"; reasons: string[] } | null;
   preview: ChangePreview | TransformPreview;
 }
 

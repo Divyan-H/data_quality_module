@@ -68,7 +68,9 @@ export function AgentWorkspace({ run, phase, nextKey, onClose, onAccept, onChang
   async function apply(cs: string) {
     setError(null);
     try {
-      onChange(await api.agentApply(run.id, phase.key, cs));
+      // The card only enables Apply for an elevated change once the analyst has ticked the confirmation.
+      const elevated = state?.changesets[cs]?.review?.level === "elevated";
+      onChange(await api.agentApply(run.id, phase.key, cs, elevated));
     } catch (e) {
       fail(e);
       loadState();

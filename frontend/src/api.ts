@@ -117,8 +117,8 @@ export const api = {
   agent: (id: string, key: PhaseKey) => request<AgentState>(`/runs/${id}/phases/${key}/agent`),
   agentSay: (id: string, key: PhaseKey, text: string) =>
     request<{ reply: unknown; state: AgentState }>(`/runs/${id}/phases/${key}/agent/messages`, json({ text })),
-  agentApply: (id: string, key: PhaseKey, cs: string) =>
-    request<Run>(`/runs/${id}/phases/${key}/agent/changesets/${encodeURIComponent(cs)}/apply`, { method: "POST" }),
+  agentApply: (id: string, key: PhaseKey, cs: string, confirm = false) =>
+    request<Run>(`/runs/${id}/phases/${key}/agent/changesets/${encodeURIComponent(cs)}/apply`, json({ confirm })),
   agentDiscard: (id: string, key: PhaseKey, cs: string) =>
     request<AgentState>(`/runs/${id}/phases/${key}/agent/changesets/${encodeURIComponent(cs)}/discard`, { method: "POST" }),
   agentUndo: (id: string, key: PhaseKey) => request<Run>(`/runs/${id}/phases/${key}/agent/undo`, { method: "POST" }),

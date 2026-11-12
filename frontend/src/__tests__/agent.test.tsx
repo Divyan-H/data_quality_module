@@ -172,3 +172,25 @@ describe("Phase T", () => {
     expect(onSuggest).toHaveBeenCalledWith("show recipe");
   });
 });
+
+describe("guardrail confirmation", () => {
+  const elevated: ChangeSetView = { ...cs("proposed"), review: { level: "elevated", reasons: ["It removes rows."] } };
+
+  it("keeps Apply disabled until the analyst ticks the confirmation, and shows why", async () => {
+    const onApply = vi.fn();
+    render(<ProposalCard cs={elevated} busy={false} onApply={onApply} onDiscard={() => {}} onAgain={() => {}} />);
+    const apply = screen.getByRole("button", { name: "Apply" });
+    expect(apply).toBeDisabled();
+    expect(screen.getByText("It removes rows.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox"));
+    expect(apply).toBeEnabled();
+    await userEvent.click(apply);
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for nothing extra on an ordinary change", () => {
+    render(<ProposalCard cs={{ ...cs("proposed"), review: { level: "normal", reasons: [] } }} busy={false} onApply={() => {}} onDiscard={() => {}} onAgain={() => {}} />);
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
+  });
+});

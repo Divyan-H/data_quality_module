@@ -46,6 +46,9 @@ class ChangeSet(BaseModel):
     error: str | None = None
     result: dict | None = None
     has_snapshot: bool = False
+    review: dict | None = None                   # guardrails.assess: {"level", "reasons"}; elevated = confirm to apply
+    applied_by: str | None = None                # who confirmed the apply (the access model has one shared identity today)
+    model: dict | None = None                    # for model-made plans: {"model", "digest", "prompt_version", "repaired"}
 
     def operations(self) -> list:
         return _OPS.validate_python(self.plan)
@@ -53,7 +56,7 @@ class ChangeSet(BaseModel):
     def brief(self) -> dict:
         return {"id": self.id, "status": self.status, "instruction": self.instruction, "source": self.source,
                 "summary": self.preview.get("summary"), "created_at": self.created_at, "applied_at": self.applied_at,
-                "undone_at": self.undone_at, "error": self.error}
+                "undone_at": self.undone_at, "error": self.error, "review": self.review}
 
 
 class Message(BaseModel):

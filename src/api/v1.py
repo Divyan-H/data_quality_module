@@ -47,6 +47,10 @@ class AgentMessageBody(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000, description="what the analyst wants changed, in plain words")
 
 
+class AgentApplyBody(BaseModel):
+    confirm: bool = Field(False, description="the analyst checked the preview of a change marked as needing confirmation")
+
+
 async def save_upload(upload: UploadFile, limit: int, tmp: Path) -> Path:
     """Stream an upload to a temp file, stopping as soon as it passes `limit` bytes."""
     tmp.mkdir(parents=True, exist_ok=True)
@@ -234,9 +238,10 @@ def make_router(pipe: Pipeline) -> APIRouter:
         return pipe.agent.message(run_id, key, body.text)
 
     @r.post("/runs/{run_id}/phases/{key}/agent/changesets/{changeset}/apply")
-    def agent_apply(run_id: str, key: str, changeset: str) -> dict:
-        """Apply a previewed change-set. Returns at once; the outcome arrives through the run's state."""
-        return pipe.agent.apply(run_id, key, changeset)
+    def agent_apply(run_id: str, key: str, changeset: str, body: AgentApplyBody | None = None) -> dict:
+        """Apply a previewed change-set. Returns at once; the outcome arrives through the run's state. A change the
+        guardrails marked `elevated` (see its `review`) is refused with 409 `confirmation_required` unless `confirm`."""
+        return pipe.agent.apply(run_id, key, changeset, bool(body and body.confirm))
 
     @r.post("/runs/{run_id}/phases/{key}/agent/changesets/{changeset}/discard")
     def agent_discard(run_id: str, key: str, changeset: str) -> dict:

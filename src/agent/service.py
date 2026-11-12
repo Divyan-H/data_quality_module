@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 
+from . import guardrails
 from .errors import AgentError
 from .operations import Plan
 from .planner import Planner, PlanningContext
@@ -22,13 +23,34 @@ from .store import AgentStore, ChangeSet, now
 from .workspace import Workspace
 
 log = logging.getLogger("dq.agent")
+HISTORY_MESSAGES = 12                             # stored messages looked at when building the model's memory
 UNDO_DEPTH = 10                                   # applied change-sets that keep a snapshot (older ones cannot be undone)
 
 
 class AgentService:
-    def __init__(self, workspace: Workspace, store: AgentStore, planner: Planner, library: RecipeLibrary | None = None):
+    def __init__(self, workspace: Workspace, store: AgentStore, planner: Planner, library: RecipeLibrary | None = None,
+                 audit=None, run_id: str | None = None, confirm_cells: int = guardrails.CONFIRM_CELLS):
         self.ws, self.store, self.planner = workspace, store, planner
         self.library = library or getattr(workspace, "library", None) or RecipeLibrary(None)
+        self.audit, self.run_id, self.confirm_cells = audit, run_id, confirm_cells
+
+    def _audit(self, action: str, **detail) -> None:
+        if self.audit is not None:
+            self.audit.record(action, self.run_id, self.store.phase, **detail)
+
+    def _history(self) -> list[dict]:
+        """The conversation so far, for the model's memory: what was said, and for proposals the typed plan and what
+        became of it. The message being planned now is not part of it."""
+        sets = {c.id: c for c in self.store.all()}
+        turns = []
+        for m in self.store.messages()[-HISTORY_MESSAGES:]:
+            turn = {"role": m.role, "text": m.text if m.role == "user" else m.text.split("\n", 1)[0]}
+            cs = sets.get(m.changeset) if m.kind == "proposal" and m.changeset else None
+            if cs is not None:
+                turn.update(ops=cs.plan, status=cs.status)
+            if m.kind in ("text", "proposal", "ask"):                   # results and errors add nothing to plan from
+                turns.append(turn)
+        return turns
 
     # ── read ─────────────────────────────────────────────────────────────────
     def state(self) -> dict:
@@ -45,6 +67,7 @@ class AgentService:
             raise AgentError("empty_message", "Type what you would like to change.")
         if len(text) > 2000:
             raise AgentError("message_too_long", "Keep an instruction under 2,000 characters; split it into steps.")
+        history = self._history()                                # before this message is stored
         user = self.store.add_message("user", text)
         try:
             plan = self._recipe_command(text)
@@ -52,9 +75,15 @@ class AgentService:
             plan = Plan(answer=e.message)
         if plan is None:
             tables = self.ws.load()
-            plan = self.planner.plan(text, PlanningContext(tables, self.ws.phase))
-        log.info("agent plan from %s: %s", plan.source,
-                 "ask" if plan.ask else "answer" if plan.answer else [op.op for op in plan.ops])
+            plan = self.planner.plan(text, PlanningContext(tables, self.ws.phase, history))
+        llm = getattr(self.planner, "llm", None)
+        trace = dict(llm.trace) if llm is not None and plan.source == "llm" else None
+        kind = "ask" if plan.ask else "answer" if plan.answer else "plan"
+        log.info("agent plan", extra={"source": plan.source, "kind": kind, "operations": [op.op for op in plan.ops],
+                                      "chars": len(text)})
+        self._audit("agent.planned", source=plan.source, kind=kind, operations=[op.op for op in plan.ops],
+                    instruction_chars=len(text), model_calls=(trace or {}).get("calls", 0),
+                    repaired=(trace or {}).get("repaired", False))
         if plan.ask:
             reply = self.store.add_message("agent", plan.ask, "ask")
             return {"messages": [user.model_dump(), reply.model_dump()], "changeset": None}
@@ -78,11 +107,19 @@ class AgentService:
                 text_ += f" Not found: {', '.join(map(str, unmatched[:10]))}."
             reply = self.store.add_message("agent", text_, "answer")
             return {"messages": [user.model_dump(), reply.model_dump()], "changeset": None}
+        review = guardrails.assess(plan.ops, preview, self.confirm_cells)
+        model = None
+        if trace is not None and llm is not None and llm.client is not None:
+            model = {"model": llm.client.model, "digest": llm.client.digest, "prompt_version": trace.get("prompt_version"),
+                     "repaired": trace.get("repaired", False)}
         cs = ChangeSet(id=cs_id, phase=self.store.phase, instruction=text, source=plan.source,
-                       plan=[op.model_dump() for op in plan.ops], preview=preview, base_version=version)
+                       plan=[op.model_dump() for op in plan.ops], preview=preview, base_version=version,
+                       review=review, model=model)
         self.store.save(cs)
+        caution = ("\nPlease check this one carefully before applying: " + " ".join(review["reasons"])
+                   if guardrails.needs_confirmation(review) else "")
         reply = self.store.add_message("agent", "Here is what I would change. Nothing is applied until you click Apply.\n"
-                                       + "\n".join(f"• {o['text']} {o['summary']}" for o in preview["operations"]),
+                                       + "\n".join(f"• {o['text']} {o['summary']}" for o in preview["operations"]) + caution,
                                        "proposal", cs_id)
         return {"messages": [user.model_dump(), reply.model_dump()], "changeset": {**cs.brief(), "preview": preview}}
 
@@ -140,8 +177,11 @@ class AgentService:
                 other.status = "stale"
                 self.store.save(other)
 
-    def apply(self, cs_id: str) -> dict:
+    def apply(self, cs_id: str, confirm: bool = False, applied_by: str = "analyst") -> dict:
         cs = self._proposal(cs_id)
+        if guardrails.needs_confirmation(cs.review) and not confirm:
+            raise AgentError("confirmation_required", "This change needs an explicit confirmation: "
+                             + " ".join(cs.review["reasons"]) + " Check the preview, then confirm.")
         try:
             result = self.ws.apply(cs.operations(), cs.id, cs.instruction, cs.base_version, self.store.snapshot_dir(cs.id))
         except AgentError as e:
@@ -152,8 +192,11 @@ class AgentService:
             self.store.save(cs)
             self.store.add_message("agent", e.message, "error", cs.id)
             raise
-        cs.status, cs.applied_at, cs.result, cs.has_snapshot = "applied", now(), result, True
+        cs.status, cs.applied_at, cs.result, cs.has_snapshot, cs.applied_by = "applied", now(), result, True, applied_by
         self.store.save(cs)
+        self._audit("agent.applied", changeset=cs.id, source=cs.source, operations=[op["op"] for op in cs.plan],
+                    confirmed=bool(confirm), elevated=guardrails.needs_confirmation(cs.review),
+                    cells=(cs.preview.get("totals") or {}).get("cells"), model=(cs.model or {}).get("model"))
         self._stale_others(cs.id)                        # their previews were computed on the data before this change
         self.store.prune_snapshots(UNDO_DEPTH)
         tail = (f" The recipe now has {result['steps']} step(s)." if "steps" in result
@@ -173,6 +216,7 @@ class AgentService:
         self.ws.restore(self.store.snapshot_dir(cs.id))
         cs.status, cs.undone_at, cs.has_snapshot = "undone", now(), False
         self.store.save(cs)
+        self._audit("agent.undone", changeset=cs.id)
         self._stale_others(None)
         self.store.prune_snapshots(UNDO_DEPTH)
         msg = self.store.add_message("agent", f"Undid {cs.id} ({cs.instruction!r}). The data is back to how it was before it.",
