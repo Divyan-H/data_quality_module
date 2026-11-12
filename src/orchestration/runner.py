@@ -39,6 +39,12 @@ class Job:
     done: threading.Event = field(default_factory=threading.Event)
     outcome: dict | None = None
 
+    @property
+    def pid(self) -> int:
+        """The worker's process id. `launch` only returns a job whose process has started."""
+        assert self.proc is not None, "job has no process"
+        return self.proc.pid
+
 
 class Busy(RuntimeError):
     """The run already has a job, or the service is at its job limit. Nothing was changed."""
@@ -170,7 +176,7 @@ class JobRunner:
         except (OSError, IndexError):
             pass
         return {"ok": False, "kind": "crash", "code": "worker_died", "problems": [],
-                "message": f"The worker process ended unexpectedly (exit code {job.proc.returncode}). {err}".strip()}
+                "message": f"The worker process ended unexpectedly (exit code {job.proc.returncode if job.proc else '?'}). {err}".strip()}
 
     def cancel(self, run_id: str) -> bool:
         job = self.active(run_id)

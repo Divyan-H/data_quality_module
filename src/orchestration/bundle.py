@@ -101,7 +101,8 @@ def group_of(a: Artifact) -> str:
 def build_zip(run: Path, name: str) -> Path:
     arts = collect(run)
     out = Paths(run).final / "data_quality_results.zip"
-    manifest = {"run": name, "built_at": now(), "files": []}
+    files: list[dict] = []
+    manifest = {"run": name, "built_at": now(), "files": files}
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for a in arts:
             folder = {"data": "data", "review": "reports", "audit": "audit", "config": "config", "log": "logs"}[a.kind]
@@ -109,6 +110,6 @@ def build_zip(run: Path, name: str) -> Path:
             z.write(a.path, arc)
             with a.path.open("rb") as f:
                 digest = hashlib.file_digest(f, "sha256").hexdigest()
-            manifest["files"].append({"path": arc, "phase": a.phase, "bytes": a.path.stat().st_size, "sha256": digest})
+            files.append({"path": arc, "phase": a.phase, "bytes": a.path.stat().st_size, "sha256": digest})
         z.writestr("MANIFEST.json", json.dumps(manifest, indent=1))
     return out

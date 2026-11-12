@@ -172,7 +172,7 @@ class AgentController:
                   "recipes_dir": self.recipes_dir(), "audit_db": str(self.pipe.settings.audit_db)}
         outcome = self.pipe._sync_job(run_id, key, "agent_message", params)
         if not outcome.get("ok"):
-            raise PipelineError(HTTP.get(outcome.get("code"), 500 if outcome.get("kind") == "crash" else 400),
+            raise PipelineError(HTTP.get(str(outcome.get("code")), 500 if outcome.get("kind") == "crash" else 400),
                                 outcome.get("code") or "agent_failed", outcome.get("message") or "The agent failed.")
         return {"reply": outcome["data"], "state": self.state(run_id, key)}
 
@@ -191,7 +191,7 @@ class AgentController:
             ph["_agent"] = {"was": ph["status"], "action": action}
             ph["agent_error"] = None
             ph["status"] = RUNNING
-            st["job"] = {"id": job.id, "phase": key, "action": action, "started_at": now(), "pid": job.proc.pid}
+            st["job"] = {"id": job.id, "phase": key, "action": action, "started_at": now(), "pid": job.pid}
         return self.pipe.view(run_id)
 
     def apply(self, run_id: str, key: str, changeset: str, confirm: bool = False) -> dict:
@@ -203,8 +203,9 @@ class AgentController:
         if cs.status != "proposed":
             raise PipelineError(409, "not_proposed", f"Change {changeset} is {cs.status}; only a proposed change can be applied.")
         if guardrails.needs_confirmation(cs.review) and not confirm:
+            reasons = (cs.review or {}).get("reasons", [])
             raise PipelineError(409, "confirmation_required", "This change needs an explicit confirmation: "
-                                + " ".join(cs.review["reasons"]), {"reasons": cs.review["reasons"]})
+                                + " ".join(reasons), {"reasons": reasons})
         view = self._launch(run_id, key, "agent_apply", {"changeset": changeset, "confirm": bool(confirm)})
         self.pipe.audit.record("agent.apply_requested", run_id, key, changeset=changeset, source=cs.source,
                                operations=[op.get("op") for op in cs.plan])

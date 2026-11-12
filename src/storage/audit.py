@@ -152,7 +152,8 @@ class AuditLog:
 
     def events(self, run_id: str | None = None, limit: int = 200, before_id: int | None = None) -> list[dict]:
         """Newest first. `before_id` pages backwards."""
-        where, values = [], []
+        where: list[str] = []
+        values: list[str | int] = []
         if run_id:
             where.append("run_id = ?")
             values.append(run_id)

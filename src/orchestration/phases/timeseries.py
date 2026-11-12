@@ -41,13 +41,13 @@ def unit_artifacts(out: Path, phase: str, prefix: str, report: str, review_text:
     for e, folder in units.checked(out):
         name, stem = names[e["table_ref"]], e["folder"]
         arts += [Artifact(f"{prefix}-report-{stem}", f"{Path(report).stem}_{name}.xlsx", folder / report, "review",
-                          f"{e['sheet'] or e['source_file']}: {review_text}", True),
+                          phase, f"{e['sheet'] or e['source_file']}: {review_text}", True),
                  Artifact(f"{prefix}-findings-{stem}", f"findings_{phase.lower()}_{name}.json", folder / "findings.json",
-                          "audit", f"{e['sheet'] or e['source_file']}: every finding, one per line.", False),
+                          "audit", phase, f"{e['sheet'] or e['source_file']}: every finding, one per line.", False),
                  Artifact(f"{prefix}-run-{stem}", f"run_{phase.lower()}_{name}.json", folder / "run.json", "audit",
-                          f"{e['sheet'] or e['source_file']}: layout, checks, counts.", False)]
+                          phase, f"{e['sheet'] or e['source_file']}: layout, checks, counts.", False)]
     arts.append(Artifact(f"{prefix}-config", f"client_config_{phase.lower()}.xlsx", out / "client_config.xlsx", "config",
-                         "The client config this run used.", False))
+                         phase, "The client config this run used.", False))
     return [a for a in arts if a.path.exists()]
 
 

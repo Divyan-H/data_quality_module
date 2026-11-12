@@ -14,6 +14,7 @@ A run folder is self-contained: copying it elsewhere keeps the run (state, input
 """
 from __future__ import annotations
 
+import builtins
 import json
 import os
 import shutil
@@ -102,7 +103,7 @@ class RunStore:
                     raise
                 threading.Event().wait(0.05 * (attempt + 1))
 
-    def list(self) -> list[dict]:
+    def list(self) -> builtins.list[dict]:
         runs = []
         for p in self.root.iterdir():
             if p.is_dir() and (p / STATE).exists():
@@ -123,12 +124,13 @@ class RunStore:
     def append_event(self, run_id: str, event: dict) -> None:
         append_event(self.path(run_id), event)
 
-    def events(self, run_id: str, after: int = 0, limit: int = 500) -> tuple[list[dict], int]:
+    def events(self, run_id: str, after: int = 0, limit: int = 500) -> tuple[builtins.list[dict], int]:
         """Events after cursor `after` (a line count) and the new cursor."""
         path = self.path(run_id) / EVENTS
         if not path.exists():
             return [], 0
-        out, n = [], 0
+        out: builtins.list[dict] = []
+        n = 0
         with path.open(encoding="utf8") as fh:
             for n, line in enumerate(fh, start=1):
                 if n > after and len(out) < limit:

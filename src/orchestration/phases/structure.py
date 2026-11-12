@@ -154,7 +154,8 @@ class StructurePhase(Phase):
 
     def clear(self, run: Path) -> None:
         p = Paths(run)
-        wipe(p.phase_a), wipe(p.phase_a_state), wipe(p.run / "phase_a_next")
+        for folder in (p.phase_a, p.phase_a_state, p.run / "phase_a_next"):
+            wipe(folder)
 
     # ------------------------------------------------------------------ table choice
     def select(self, run: Path, refs: list[str]) -> None:
@@ -246,7 +247,8 @@ def _sheet_rows(workbook: Path, sheet: str, limit: int) -> dict:
         header = next(it, None)
         if not header:
             return {"rows": [], "total": 0}
-        rows, total = [], 0
+        rows: list[dict] = []
+        total = 0
         for r in it:
             if not any(v is not None for v in r):
                 continue

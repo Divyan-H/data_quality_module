@@ -28,7 +28,7 @@ UNDO_DEPTH = 10                                   # applied change-sets that kee
 
 
 class AgentService:
-    def __init__(self, workspace: Workspace, store: AgentStore, planner: Planner, library: RecipeLibrary | None = None,
+    def __init__(self, workspace: Workspace | None, store: AgentStore, planner: Planner | None, library: RecipeLibrary | None = None,
                  audit=None, run_id: str | None = None, confirm_cells: int = guardrails.CONFIRM_CELLS):
         self.ws, self.store, self.planner = workspace, store, planner
         self.library = library or getattr(workspace, "library", None) or RecipeLibrary(None)

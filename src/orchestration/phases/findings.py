@@ -28,7 +28,7 @@ def preview(path: Path, per_code: int = 40, total: int = 400, only_status: str |
     at most `total` rows overall."""
     counts: Counter = Counter()
     kept: Counter = Counter()
-    rows = []
+    rows: list[dict] = []
     n = 0
     for f in stream(path):
         n += 1

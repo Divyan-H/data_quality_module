@@ -84,7 +84,7 @@ class TrendsPhase(Phase):
                             "availability check (N-19) does not need a threshold.")
         elif not all(r["active"] for r in rules):
             warnings.append("Rules with an empty threshold will not run: "
-                            + ", ".join(r["label"] for r in rules if not r["active"]) + ".")
+                            + ", ".join(str(r["label"]) for r in rules if not r["active"]) + ".")
         if cc.unused:
             warnings.append(f"{len(cc.unused)} row(s) on Data Check Specifications match no Phase D rule and are ignored.")
         skipped = [t for t in tables if not t["checked"]]

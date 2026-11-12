@@ -690,3 +690,19 @@ def test_a_column_pasted_after_phase_b_is_added_and_checked(flow, weekly_files):
 def test_a_retired_fix_switch_in_old_settings_is_ignored_not_an_error():
     from src.orchestration.phases.hygiene import overrides_from
     assert overrides_from({"fixes": {"D-15": True, "D-14": False}}) == {"fixes": {"D-14": False}}
+
+
+def test_every_file_names_its_phase_and_config_phases_have_a_primary_report(finished):
+    """Audit 2026-11: Phases C and D passed the file description where the phase belongs, so the Results page showed a
+    sentence as the phase, the zip held paths made of that sentence, and no report was marked as the one to download."""
+    f, rid = finished
+    files = f.c.get(f"/api/v1/runs/{rid}/results").json()["files"]
+    assert files and {x["phase"] for x in files} <= set("ABCDT")
+    assert all(isinstance(x["description"], str) for x in files)
+    for phase in f.view(rid)["phases"]:
+        if phase["key"] in ("C", "D") and not phase["skipped"]:
+            assert [a for a in phase["artifacts"] if a["primary"] and a["kind"] == "review"], phase["key"]
+    z = zipfile.ZipFile(io.BytesIO(f.c.get(f"/api/v1/runs/{rid}/bundle").content))
+    for name in z.namelist():
+        assert ":" not in name and len(name) < 160, name
+    assert any(n.startswith("reports/C_") for n in z.namelist()) and any(n.startswith("reports/D_") for n in z.namelist())

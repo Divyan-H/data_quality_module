@@ -1,6 +1,7 @@
 """Phase B adapter: cell-level data hygiene (`src/hygiene`). Phase A's selected tables in, value-clean typed tables out."""
 from __future__ import annotations
 
+from collections.abc import Collection
 from pathlib import Path
 
 from src.common.run_inputs import hygiene_overrides, load_for_run
@@ -167,6 +168,6 @@ class HygienePhase(Phase):
         return [Artifact(i, label, p, kind, "B", desc, primary) for i, label, p, kind, desc, primary in spec if p.exists()]
 
 
-def fix_catalogue(default_off: set[str] = frozenset()) -> list[dict]:
+def fix_catalogue(default_off: Collection[str] = frozenset()) -> list[dict]:
     """The automatic fixes the analyst can switch, for the Phase B start screen."""
     return [{"id": k, "what": RULE_TEXT.get(k, ""), "default": k not in default_off} for k in FIXES]

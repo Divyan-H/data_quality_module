@@ -44,7 +44,7 @@ def _instrument_llm(emit: Emitter, audit: AuditLog, run_id: str | None, phase: s
                    + (f", {state['failed']} unanswered" if state["failed"] else ""))
         return out
 
-    OllamaClient.chat = chat
+    OllamaClient.chat = chat          # type: ignore[method-assign,assignment]  # instrumentation of this one process
     return state
 
 

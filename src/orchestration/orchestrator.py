@@ -26,6 +26,7 @@ from src.orchestration.agent import JOB_ACTIONS as AGENT_ACTIONS, AgentControlle
 from src.orchestration.phases import ORDER, PHASES, following, previous
 from src.orchestration.phases.base import Paths, PhaseError, read_json
 from src.orchestration.phases.hygiene import fix_catalogue
+from src.orchestration.phases.structure import StructurePhase
 from src.orchestration.runner import Busy, Job, JobRunner, LaunchFailed, kill_orphan
 from src.orchestration.settings import ServiceSettings
 from src.security.uploads import (DATA_EXTENSIONS, LEGACY_EXTENSIONS, WORKBOOK_EXTENSIONS, UploadRejected, safe_filename,
@@ -154,7 +155,7 @@ class Pipeline:
             raise PipelineError(400, "bad_file", str(e)) from e
         if total > self.settings.max_upload_mb * 1024 * 1024:
             raise PipelineError(413, "too_large", f"The files total {total / 2**20:.0f} MB; the limit is {self.settings.max_upload_mb} MB.")
-        state = {"name": (name or checked[0][0]).strip()[:120], "options": {"llm": "on" if llm != "off" else "off"},
+        state: dict = {"name": (name or checked[0][0]).strip()[:120], "options": {"llm": "on" if llm != "off" else "off"},
                  "inputs": [], "job": None,
                  "phases": {k: _blank_phase(k, READY if k == "A" else LOCKED) for k in ORDER}}
         run_id = self.store.create(state["name"], state)
@@ -321,7 +322,7 @@ class Pipeline:
                 failed = False
                 ph.update(status=RUNNING, attempt=ph["attempt"] + 1, params=params, started_at=now(), finished_at=None,
                           error=None, upload_error=None, llm=llm_record)
-                st["job"] = {"id": job.id, "phase": key, "action": "run", "started_at": now(), "pid": job.proc.pid}
+                st["job"] = {"id": job.id, "phase": key, "action": "run", "started_at": now(), "pid": job.pid}
         if failed:
             raise PipelineError(500, "launch_failed", "The job could not be started. Start the phase again.")
         return self.view(run_id)
@@ -361,6 +362,7 @@ class Pipeline:
         """Keep only `refs` of Phase A's tables for the next phases. Later phases that already ran on another choice
         are discarded (they are locked again until Phase A is accepted, or become ready when it already is)."""
         adapter = PHASES["A"]
+        assert isinstance(adapter, StructurePhase)
         run = self.store.path(run_id)
         with self.store.edit(run_id) as st:
             ph = st["phases"]["A"]
@@ -415,7 +417,7 @@ class Pipeline:
             ph["upload_error"] = None
             ph["_reviewing"] = {"name": name, "was": ph["status"]}
             ph["status"] = RUNNING
-            st["job"] = {"id": job.id, "phase": key, "action": "review", "started_at": now(), "pid": job.proc.pid}
+            st["job"] = {"id": job.id, "phase": key, "action": "review", "started_at": now(), "pid": job.pid}
         return self.view(run_id)
 
     # -- client config workbooks (C and D) -----------------------------------
@@ -433,7 +435,7 @@ class Pipeline:
                 job = self.runner.launch(run_id, key, action, params, upload=upload)
             except Busy as e:
                 raise PipelineError(429, "busy", str(e)) from e
-            st["job"] = {"id": job.id, "phase": key, "action": action, "started_at": now(), "pid": job.proc.pid}
+            st["job"] = {"id": job.id, "phase": key, "action": action, "started_at": now(), "pid": job.pid}
         outcome = self.runner.wait(job, SYNC_WAIT_S)
         if outcome is None:
             self.runner.cancel(run_id)
@@ -706,7 +708,7 @@ class Pipeline:
         gone = []
         for st in self.store.list():
             try:
-                touched = datetime.fromisoformat(st.get("updated_at") or st.get("created_at"))
+                touched = datetime.fromisoformat(str(st.get("updated_at") or st.get("created_at")))
             except (TypeError, ValueError):
                 continue
             if touched.tzinfo is None:
