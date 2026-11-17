@@ -149,16 +149,17 @@ class CommandParser(TransformCommands):
         return None
 
     # ── names ────────────────────────────────────────────────────────────────
-    def column(self, name: str, required: bool = True) -> str | None:
+    def column(self, name: str) -> str:
+        """The real column `name` refers to; asks the analyst (lists the columns) when there is none."""
         col = self.ctx.find_column(name)
-        if col is None and required:
+        if col is None:
             cols = self.ctx.columns
             raise Ask(f"I could not find a column called '{unquote(name)}'. The columns are: {', '.join(cols[:40])}"
                       + (" ..." if len(cols) > 40 else "") + ".")
         return col
 
     def columns(self, spec: str) -> list[str]:
-        whole = self.column(spec, required=False)
+        whole = self.ctx.find_column(spec)
         if whole:
             return [whole]
         return [self.column(p) for p in split_values(spec)]
@@ -497,7 +498,7 @@ class CommandParser(TransformCommands):
         vals = split_values(m.group("vals"))
         whole = [v for v in vals if col in self.ctx.columns_with_value(v)]
         if len(whole) == len(vals):
-            return Plan(ops=[ReplaceValues(mapping={v: None for v in vals}, columns=[col])])
+            return Plan(ops=[ReplaceValues(mapping=dict.fromkeys(vals), columns=[col])])
         if len(vals) == 1:                                  # part of the text: '$', ' (est)'
             return Plan(ops=[ReplaceText(column=col, find=vals[0], replace="")])
         missing = [v for v in vals if v not in whole]
@@ -512,7 +513,7 @@ class CommandParser(TransformCommands):
                 return Plan(ops=[ReplaceText(column=col, find=sources[0], replace=target or "")])
             if not whole:
                 raise Ask(f"I could not find {', '.join(repr(s) for s in sources)} in {col}.")
-            return Plan(ops=[ReplaceValues(mapping={s: target for s in sources}, columns=[col])])
+            return Plan(ops=[ReplaceValues(mapping=dict.fromkeys(sources, target), columns=[col])])
         cols = sorted({c for s in sources for c in self.ctx.columns_with_value(s)})
         if not cols:
             raise Ask(f"I could not find {', '.join(repr(s) for s in sources)} as a value in any column. "
@@ -520,7 +521,7 @@ class CommandParser(TransformCommands):
         if len(cols) > 1 and not everywhere:
             raise Ask(f"{', '.join(repr(s) for s in sources)} appears in {', '.join(cols)}. Which column should I change? "
                       "(Or say 'everywhere'.)")
-        return Plan(ops=[ReplaceValues(mapping={s: target for s in sources}, columns=cols)])
+        return Plan(ops=[ReplaceValues(mapping=dict.fromkeys(sources, target), columns=cols)])
 
     _TAIL = r"(?:\s+(?:in|for|on|within)\s+(?:the\s+)?(?:column\s+)?(?P<col>[^,]+?)(?:\s+column)?)?(?P<every>\s+everywhere|\s+in\s+(?:all|every)\s+(?:columns?|tables?|files?|sheets?))?$"
 

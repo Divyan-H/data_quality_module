@@ -27,8 +27,8 @@ jobs:
         run: pip install --require-hashes -r requirements-dev.txt
       - name: Lint
         run: ruff check src tests
-      - name: Type check (infrastructure packages)
-        run: mypy src/api src/orchestration src/storage src/security src/observability
+      - name: Type check (service, security and agent packages)
+        run: mypy src/api src/orchestration src/storage src/security src/observability src/agent
       - name: Security lint
         run: bandit -q -c pyproject.toml -r src -ll
       - name: Known vulnerabilities in dependencies

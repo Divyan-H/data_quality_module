@@ -576,7 +576,7 @@ def _finish_columns(sheet: Sheet, t: Table, data_rows: list[int], params: dict) 
                         "distinct_estimate": len(distinct)},
             "flags": flags, "uncached": hist.get("formula_uncached", 0)})
     t.info["sparse"] = [{"letter": c["letter"], "fill_pct": c["profile"]["fill_pct"]} for c in t.columns
-                        if 0 < c["profile"]["populated"] and 100 - c["profile"]["fill_pct"] >= params["sparse_column_pct"]]
+                        if c["profile"]["populated"] > 0 and 100 - c["profile"]["fill_pct"] >= params["sparse_column_pct"]]
     t.info["header_only"] = [c["letter"] for c in t.columns if c["profile"]["populated"] == 0]
 
 
@@ -729,7 +729,7 @@ def analyze_sheet(sheet: Sheet, params: dict, file_key: str, rv=None, overrides=
     if sheet.error:
         # Spec §6.3: the sheet is listed with its error and every cell read before it failed is accounted
         # as an `unread` placement, so nothing vanishes (K-14).
-        placements = {k: ("unread", None) for k in sheet.cells}
+        placements = dict.fromkeys(sheet.cells, ("unread", None))
         return SheetResult(sheet, [], [], placements, len(sheet.cells),
                            range_a1(*used) if used else None, 0.0, sheet.error)
     if used is None:

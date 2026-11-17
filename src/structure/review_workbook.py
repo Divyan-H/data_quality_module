@@ -128,7 +128,7 @@ def _write_table_sheet(wb, name: str, t: dict, tdir: Path, cells: list[dict], ma
             dominant = c["source_type"]["dominant"]
             kind = exceptions.get((source_rows[i], c["col"]), dominant)
             cell = WriteOnlyCell(ws)
-            if kind == "formula_uncached" or text is None and dominant == "formula_uncached":
+            if kind == "formula_uncached" or (text is None and dominant == "formula_uncached"):
                 cell.fill = GREY                                  # uncached formula: empty, grey (spec 9.1)
                 cell.protection = Protection(locked=True)
             elif text is not None and len(text) > MAX_CELL_CHARS:   # exported cut, greyed, locked, never an edit

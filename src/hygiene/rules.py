@@ -444,7 +444,7 @@ def find_expected_columns(expected: list[str], headers: list[str], synonyms: dic
     from .cities import edit_distance, max_edit, normalize
     norm = {h: normalize(h) for h in headers}
     syn = {e: {normalize(e)} | {normalize(s) for s in (synonyms.get(normalize(e)) or [])} for e in expected}
-    out: dict[str, str | None] = {e: None for e in expected}
+    out: dict[str, str | None] = dict.fromkeys(expected)
     claimed: set[str] = set()
     order = sorted(expected, key=lambda e: -len(normalize(e)))
 
@@ -607,7 +607,7 @@ def duplicates(t):
     """D-19: drop exact duplicate rows (keep the first). Rows sharing their key columns but differing elsewhere go to review."""
     if not t.cols:
         return
-    df = pl.DataFrame({c: t.data[c] for c in t.cols}, schema={c: pl.String for c in t.cols}).with_row_index("i")
+    df = pl.DataFrame({c: t.data[c] for c in t.cols}, schema=dict.fromkeys(t.cols, pl.String)).with_row_index("i")
     groups = df.group_by(t.cols, maintain_order=True).agg(pl.col("i")).filter(pl.col("i").list.len() > 1)
     drop = {i: g[0] for g in groups["i"].to_list() for i in g[1:]}
     if t.cfg["fixes"].get("D-19", True):

@@ -15,6 +15,7 @@ import json
 import re
 import shutil
 from pathlib import Path
+from typing import Sequence
 
 import openpyxl
 import polars as pl
@@ -23,6 +24,7 @@ from pydantic import TypeAdapter
 from ..errors import AgentError, StaleProposal
 from ..operations import Operation
 from ..recipes import RecipeLibrary
+from ..tables import PlanTable
 from ..workspace import Workspace
 from . import engine
 from .describe import step_line, transform_summary
@@ -42,8 +44,9 @@ class FrameTable:
     """A Phase T table in the shape the planner context reads (columns, kinds, values as text)."""
 
     def __init__(self, name: str, df: pl.DataFrame, source_file: str | None = None):
-        self.ref = self.sheet = name
-        self.source_file = source_file
+        self.ref: str = name
+        self.sheet: str | None = name
+        self.source_file: str | None = source_file
         self.cols = engine.data_cols(df)
         self.types = {c: ("numeric" if engine.is_numeric(df, c) else "date" if engine.is_date(df, c) else "text") for c in self.cols}
         self.data = {c: [engine.render(v) for v in df[c].to_list()] for c in self.cols}
@@ -101,7 +104,7 @@ class TransformWorkspace(Workspace):
             return self.read_inputs()
         return {t["name"]: pl.read_parquet(self.out / "tables" / t["folder"] / "data.parquet") for t in index["tables"]}
 
-    def load(self) -> list[FrameTable]:
+    def load(self) -> Sequence[PlanTable]:
         meta = {t["name"]: t.get("source_file") for t in self.inputs}
         return [FrameTable(n, df, meta.get(n)) for n, df in self.load_frames().items()]
 
@@ -125,7 +128,7 @@ class TransformWorkspace(Workspace):
         tables = self.read_inputs()
         steps, failed = self._run(tables, self.recipe(), None, 0)
         self._save(tables, steps, failed)
-        return self._index()
+        return self._index() or {}
 
     def preview(self, ops: list, changeset_id: str, instruction: str | None) -> dict:
         tables = self.load_frames()
@@ -208,7 +211,7 @@ class TransformWorkspace(Workspace):
                   else [None] * df.height)
         data: dict[str, list] = {"_row_id": ids, "_source_row": source}
         data |= {c: [engine.render(v) for v in df[c].to_list()] for c in cols}
-        pl.DataFrame(data, schema={"_row_id": pl.String, "_source_row": pl.Int64, **{c: pl.String for c in cols}}
+        pl.DataFrame(data, schema={"_row_id": pl.String, "_source_row": pl.Int64, **dict.fromkeys(cols, pl.String)}
                      ).write_parquet(path)
         return [(ref, i, o, s) for i, o, s in zip(ids, origin, source)]
 
@@ -258,14 +261,26 @@ class TransformWorkspace(Workspace):
 
 
 class TransformViews:
-    """Read-only data for the agent screen in Phase T: the recipe's steps, the output tables, pages of rows."""
+    """Read-only data for the Reshape-with-agent screen: the recipe's steps, the tables as they stand, pages of rows.
 
-    def __init__(self, out: Path):
+    Before the first step is applied nothing has been written for the recipe; the screen then shows the input tables
+    (`inputs`, as given to TransformWorkspace) straight from where Phase A wrote them."""
+
+    def __init__(self, out: Path, inputs: list[dict] | None = None):
         self.out = Path(out)
         try:
             self.index = json.loads((self.out / "run.json").read_text("utf8"))
         except (OSError, ValueError) as e:
-            raise AgentError("not_ready", "Phase A has no tables to reshape yet.") from e
+            if not inputs:
+                raise AgentError("not_ready", "Phase A has no tables to reshape yet.") from e
+            self.index = {"steps": [], "failed": None, "tables": [self._input_entry(t) for t in inputs]}
+
+    @staticmethod
+    def _input_entry(t: dict) -> dict:
+        scan = pl.scan_parquet(t["path"])
+        return {"name": t["name"], "source_file": t.get("source_file"), "path": t["path"],
+                "rows": scan.select(pl.len()).collect().item(),
+                "columns": [c for c in scan.collect_schema().names() if not c.startswith("_")]}
 
     def issues(self) -> dict:
         tables = [{"ref": t["name"], "file": t.get("source_file"), "sheet": t["name"], "rows": t["rows"], "columns": t["columns"]}
@@ -280,12 +295,12 @@ class TransformViews:
         if entry is None:
             raise AgentError("no_such_table", f"There is no table {table} among the reshaped tables.")
         limit = max(1, min(limit, 500))
-        df = pl.read_parquet(self.out / "tables" / entry["folder"] / "data.parquet")
-        cols = engine.data_cols(df)
-        page = df.slice(offset, limit)
+        scan = pl.scan_parquet(entry.get("path") or self.out / "tables" / entry["folder"] / "data.parquet")
+        cols = [c for c in scan.collect_schema().names() if not c.startswith("_")]
+        page = scan.slice(offset, limit).collect()                       # only this page is read from disk
         ids = page["_row_id"].to_list() if "_row_id" in page.columns else [None] * page.height
         src = page["_source_row"].to_list() if "_source_row" in page.columns else [None] * page.height
         rows = [{"row_id": rid, "excel_row": s, "values": {c: engine.render(v) for c, v in zip(cols, vals)},
                  "changed": {}, "flagged": {}} for rid, s, vals in zip(ids, src, page.select(cols).iter_rows())]
-        return {"table": table, "columns": cols, "total": df.height, "offset": offset, "limit": limit, "rows": rows,
+        return {"table": table, "columns": cols, "total": entry["rows"], "offset": offset, "limit": limit, "rows": rows,
                 "column_items": []}

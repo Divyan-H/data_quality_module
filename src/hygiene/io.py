@@ -120,7 +120,7 @@ def read_frame(path: Path) -> pl.DataFrame:
     if path.suffix.lower() == ".xlsx":
         sh = read_workbook(path)[0]
         return pl.DataFrame({c: [v[j] for _, v in sh["rows"]] for j, c in enumerate(sh["header"])},
-                            schema={c: pl.String for c in sh["header"]})
+                            schema=dict.fromkeys(sh["header"], pl.String))
     readers = {".parquet": pl.read_parquet, ".csv": _read_csv}
     df = readers[path.suffix.lower()](path)
     return df.cast({c: pl.String for c in df.columns if c not in SYSTEM})

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.1 — 2026-11-17 · review pass
+
+### Fixed
+- A condition with a single value where a list is expected (`City in "Delhi"`) was matched character by character,
+  and a number there raised inside the job; it is now read as a list of one, in both the Phase B and the reshaping engine.
+- Changing the table selection could leave Phase A *accepted* with a recipe whose step no longer ran; Phase A is now
+  put back in review and Phase B locked.
+- `bucket others` without a keep list, a source table or a top N now answers with a clear message.
+
+### Changed
+- Without a recipe nothing is written for reshaping: Phase A no longer copies every table, and a selection change
+  answers at once again. The Reshape screen then reads Phase A's tables directly, one page at a time.
+- The chat no longer re-reads Phase A's review workbook on every message (`StructurePhase.tables`).
+- `src/agent` passes the type checker (131 errors before) and is part of the CI gate; `Operation` is an explicit union;
+  `PlanTable` describes what the planner needs from a table; the parser's `column()` always returns a column.
+- `IMPROVEMENTS.md`: the single, prioritised list of what is still open.
+
 ## 1.2.0 — 2026-11-16 · reshaping moves into Phase A
 
 ### Changed

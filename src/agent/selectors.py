@@ -15,7 +15,8 @@ from src.hygiene.values import parse_date, parse_number
 
 from . import safe_regex
 from .errors import AgentError
-from .operations import Condition, RowFilter
+from .operations import Condition, RowFilter, value_list
+from .tables import PlanTable
 
 
 def text_key(v) -> str:
@@ -60,7 +61,7 @@ def require_column(t: Table, name: str) -> str:
     return col
 
 
-def label(t: Table) -> str:
+def label(t: PlanTable) -> str:
     parts = [p for p in (t.source_file, t.sheet) if p]
     return " / ".join(parts) if parts else t.ref
 
@@ -92,13 +93,15 @@ def _test(t: Table, col: str, cond: Condition, v) -> bool:
         return not (v is None or str(v).strip() == "")
     if op in ("gt", "gte", "lt", "lte"):
         da, db = as_date(v), as_date(cond.value)
+        a: tuple | float | None
+        b: tuple | float | None
         if db is not None:                                    # 'Date >= 2025-09-09' compares dates
             a, b = da, db
         else:
             a, b = _number(t, col, v), _number(t, col, cond.value)
         if a is None or b is None:
             return False
-        return {"gt": a > b, "gte": a >= b, "lt": a < b, "lte": a <= b}[op]
+        return {"gt": a > b, "gte": a >= b, "lt": a < b, "lte": a <= b}[op]      # type: ignore[operator]  # same kind on both sides
     if v is None:
         return op in ("ne", "not_in")
     key = text_key(v)
@@ -110,7 +113,7 @@ def _test(t: Table, col: str, cond: Condition, v) -> bool:
             equal = n is not None and n == float(target)
         return equal if op == "eq" else not equal
     if op in ("in", "not_in"):
-        hit = key in {text_key(x) for x in cond.value}
+        hit = key in {text_key(x) for x in value_list(cond.value)}
         return hit if op == "in" else not hit
     if op == "contains":
         return text_key(cond.value) in key
@@ -129,7 +132,7 @@ def rows(t: Table, where: RowFilter) -> list[int]:
         return []
     n = len(t.data["_row_id"])
     src = t.data.get("_source_row") or [None] * n
-    keep = range(n)
+    keep: list[int] = list(range(n))
     if where.rows:
         wanted = {int(r) for r in where.rows}
         keep = [i for i in keep if src[i] in wanted]
@@ -142,7 +145,7 @@ def rows(t: Table, where: RowFilter) -> list[int]:
             return []                                    # the table does not have the column: nothing in it matches
         vals = t.data[col]
         keep = [i for i in keep if _test(t, col, cond, vals[i])]
-    return list(keep)
+    return keep
 
 
 def tables_with_columns(tables: list[Table], where_tables: list[str] | None, columns: list[str]) -> list[Table]:

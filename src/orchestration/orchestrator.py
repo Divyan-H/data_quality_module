@@ -385,10 +385,19 @@ class Pipeline:
             if ph["status"] == ACCEPTED:
                 st["phases"]["B"]["status"] = READY
             params = {**ph["params"], "recipes_dir": self.agent.recipes_dir()}
-        # The reshaping recipe (if any) starts from the selected tables: run it again on the new selection.
+        if not adapter.has_recipe(run):
+            return self.view(run_id)                             # the usual case: nothing to replay, answer at once
+        # The reshaping recipe starts from the selected tables: run it again on the new selection (a short job).
         outcome = self._sync_job(run_id, "A", "reshape", params)
         if not outcome["ok"]:
             raise PipelineError(422, outcome.get("code") or "reshape_failed", outcome["message"])
+        ok, _ = adapter.can_continue(run)
+        if not ok:                                               # a step no longer fits: Phase A must be looked at again
+            def reopen(st: dict) -> None:
+                if st["phases"]["A"]["status"] == ACCEPTED:
+                    st["phases"]["A"]["status"] = REVIEW
+                    st["phases"]["B"]["status"] = LOCKED
+            self.store.update(run_id, reopen)
         return self.view(run_id)
 
     @audited("review.uploaded", lambda a, k, r: {"file": Path(str(a[2])).name[:120] if len(a) > 2 else None})

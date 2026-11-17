@@ -109,18 +109,20 @@ class StructurePhase(Phase):
         return self.summary(ctx.run)
 
     # ------------------------------------------------------------------ reshaping (the recipe)
+    def has_recipe(self, run: Path) -> bool:
+        return reshape.has_steps(run)
+
     def replay(self, ctx: Context, params: dict) -> dict:
         """Run the reshaping recipe on the tables as they are now (after a run, a review upload or a new selection)."""
         ctx.emit.stage("reshaping", 95)
-        reshape.replay(ctx.run, self.summary(ctx.run).get("tables", []), params)
+        reshape.replay(ctx.run, self.tables(ctx.run), params)
         return self.summary(ctx.run)
 
     def agent_workspace(self, ctx: Context, params: dict):
-        return reshape.workspace(ctx.run, self.summary(ctx.run).get("tables", []), params)
+        return reshape.workspace(ctx.run, self.tables(ctx.run), params)
 
     def agent_views(self, run: Path):
-        from src.agent.transform.workspace import TransformViews
-        return TransformViews(reshape.out(run))
+        return reshape.views(run, self.tables(run))
 
     # ------------------------------------------------------------------ review upload
     def review(self, ctx: Context, upload: Path, params: dict) -> dict:
@@ -178,30 +180,29 @@ class StructurePhase(Phase):
     # ------------------------------------------------------------------ table choice
     def select(self, run: Path, refs: list[str]) -> None:
         """Keep only `refs` for the next phases (the analyst's choice on the Phase A screen)."""
-        known = {t["ref"] for t in self.summary(run).get("tables", [])}
+        known = {t["ref"] for t in self.tables(run)}
         unknown = sorted(set(refs) - known)
         if unknown:
             raise PhaseError("unknown_table", f"Phase A found no table {', '.join(unknown)}.")
         if not refs:
             raise PhaseError("nothing_selected", "Keep at least one table: the next phases need something to clean.")
-        ordered = [r for r in (t["ref"] for t in self.summary(run)["tables"]) if r in set(refs)]
+        ordered = [r for r in (t["ref"] for t in self.tables(run)) if r in set(refs)]
         (Paths(run).phase_a_state / SELECTION).write_text(json.dumps({"tables": ordered}), encoding="utf8")
 
     # ------------------------------------------------------------------ reading results
     def can_continue(self, run: Path) -> tuple[bool, str | None]:
-        if not any(t["selected"] for t in self.summary(run).get("tables", [])):
+        if not any(t["selected"] for t in self.tables(run)):
             return False, "No table is selected, so there is nothing to clean. Tick at least one table, or fix the blocking issues."
         why = reshape.blocked(run)
         return (False, why) if why else (True, None)
 
-    def summary(self, run: Path) -> dict:
+    def tables(self, run: Path) -> list[dict]:
+        """Every table Phase A found, with whether it is selected for the next phases. Cheap: it reads the small
+        inventory and per-file facts, not the review workbook (unlike `summary`), so the chat can call it per message."""
         out = Paths(run).phase_a
-        report = read_json(out / "report.json")
-        if report is None:
-            return {}
-        inv = read_json(out / "inventory.json", {})
-        ex = report["extras"]["structure"]
-        items = read_json(out / "action_items.json", [])
+        inv = read_json(out / "inventory.json")
+        if inv is None:
+            return []
         chosen = chosen_tables(run)
         selected = set(chosen) if chosen is not None else {r for s in inv.get("selection", []) for r in s.get("tables", [])}
         tables = []
@@ -218,6 +219,16 @@ class StructurePhase(Phase):
                 tables.append({"ref": ref, "file": f["relative_path"], "sheet": None, "range": None,
                                "rows": p["rows"], "columns": len(p["columns"]), "selected": ref in selected,
                                "decided_by": "parquet"})
+        return tables
+
+    def summary(self, run: Path) -> dict:
+        out = Paths(run).phase_a
+        report = read_json(out / "report.json")
+        if report is None:
+            return {}
+        ex = report["extras"]["structure"]
+        items = read_json(out / "action_items.json", [])
+        tables = self.tables(run)
         review = out / "review" / REVIEW
         issues, changes = _sheet_rows(review, "Issues", ISSUE_LIMIT), _sheet_rows(review, "Changes", CHANGE_LIMIT)
         by_status: dict[str, int] = {}

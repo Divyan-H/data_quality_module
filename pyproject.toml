@@ -14,9 +14,9 @@ ignore_missing_imports = true
 follow_imports = "silent"
 warn_unused_ignores = true
 plugins = ["pydantic.mypy"]
-# The gate (CI): the infrastructure packages must be clean.
-#   mypy src/api src/orchestration src/storage src/security src/observability
-# The domain packages (structure, hygiene, timeseries, trends, agent) are not type-clean yet; see docs/TESTING.md.
+# The gate (CI): the service, security and agent packages must be clean.
+#   mypy src/api src/orchestration src/storage src/security src/observability src/agent
+# The phase packages (structure, hygiene, timeseries, trends, common) are not type-clean yet; see IMPROVEMENTS.md.
 
 [tool.bandit]
 exclude_dirs = ["tests", "frontend", "data"]

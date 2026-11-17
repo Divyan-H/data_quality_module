@@ -144,6 +144,6 @@ class AgentStore:
                 cs.has_snapshot = False
                 self.save(cs)
         for d in (self.root / "snapshots").glob("cs-*") if (self.root / "snapshots").exists() else []:
-            cs = self.get(d.name)
-            if cs is None or cs.status != "applied":                    # undone / failed: nothing to go back to
+            found = self.get(d.name)
+            if found is None or found.status != "applied":                    # undone / failed: nothing to go back to
                 shutil.rmtree(d)

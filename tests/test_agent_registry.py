@@ -170,3 +170,37 @@ def test_no_answer_from_the_model_is_reported_not_guessed(ctx):
     planner = LlmPlanner(Scripted())
     plan = Planner(planner).plan("every Delhi row is actually live", ctx)
     assert plan.answer and not plan.ops and planner.trace["outcome"] == "no_answer"
+
+
+# ── found by type-checking the agent package (November 2026) ────────────────────────────────────────────────────
+def test_the_operation_union_lists_exactly_the_registered_types():
+    from typing import get_args
+
+    from src.agent.operations import OPERATION_TYPES, Operation
+    union = get_args(get_args(Operation)[0])
+    assert set(union) == set(OPERATION_TYPES) and len(union) == len(OPERATION_TYPES)
+
+
+def test_an_in_condition_with_a_single_value_matches_whole_values_not_characters(ws):
+    """`City in "Delhi"` (one value where a list is expected, which a model easily writes) used to be read character
+    by character: it matched nothing sensible, and a number there raised inside the job."""
+    from src.agent.operations import Condition
+    from src.agent.selectors import rows
+    t = ws.load()[0]
+    cities = t.data["City"]
+    assert [cities[i] for i in rows(t, RowFilter(conditions=[Condition(column="City", op="in", value="Delhi")]))] == ["Delhi", "Delhi"]
+    assert rows(t, RowFilter(conditions=[Condition(column="City", op="in", value="D")])) == []        # not a character match
+    assert rows(t, RowFilter(conditions=[Condition(column="Orders", op="in", value=10)])) != []       # a number no longer raises
+    not_in = rows(t, RowFilter(conditions=[Condition(column="City", op="not_in", value="Delhi")]))
+    assert len(not_in) == len(cities) - 2
+
+
+def test_the_reshaping_engine_reads_a_single_value_in_condition_the_same_way():
+    import polars as pl
+
+    from src.agent.operations import Condition, RemoveRows
+    from src.agent.transform.engine import apply_op
+    df = pl.DataFrame({"_row_id": ["t:2", "t:3", "t:4"], "_source_row": [2, 3, 4], "City": ["Delhi", "Pune", "Dharwad"]})
+    tables = {"T": df}
+    apply_op(tables, RemoveRows(where=RowFilter(conditions=[Condition(column="City", op="in", value="Delhi")])))
+    assert tables["T"]["City"].to_list() == ["Pune", "Dharwad"]

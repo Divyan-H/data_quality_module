@@ -16,7 +16,7 @@ from src.hygiene.values import has_keyword
 from .dataset import Dataset
 from .values import YEARS, Periods, classify
 
-MONTH_NAMES = {m: i for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split(), start=1)}
+MONTH_NAMES = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], start=1)}
 YEAR_MONTH_TEXT = [re.compile(p) for p in (r"\d{4}[-/ ]\d{1,2}", r"\d{1,2}[-/]\d{4}", r"[A-Za-z]{3,9}[-'/ ]{1,2}\d{2,4}")]
 DATE_WORDS = ["date", "week", "month", "period", "day", "time"]
 ID_WORDS = ["id", "code", "key", "ref"]

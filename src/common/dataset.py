@@ -143,7 +143,7 @@ def _csv(p: Path, key: str) -> list[Dataset]:
 def _parquet(p: Path, key: str) -> list[Dataset]:
     df = pl.read_parquet(p)
     data = {c: df[c].to_list() for c in df.columns}
-    if "_row_id" in data and data["_row_id"]:
+    if data.get("_row_id"):
         ref = data["_row_id"][0].rsplit(":", 1)[0]
     else:
         ref = f"{key}:0:t1"

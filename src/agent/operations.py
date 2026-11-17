@@ -36,6 +36,14 @@ class Condition(_Model):
         return self
 
 
+def value_list(value) -> list:
+    """A condition's value as a list, for `in` / `not_in`: a single value counts as a list of one (a model, or an
+    analyst, may write `City in Delhi`); it is never read character by character."""
+    if value is None:
+        return []
+    return list(value) if isinstance(value, (list, tuple, set)) else [value]
+
+
 class RowFilter(_Model):
     """Which rows a change touches. Every part given must hold (AND); an empty filter means every row.
     `tables` matches a table ref, file name or sheet name (case-insensitive, part of the name is enough).
@@ -408,7 +416,13 @@ VALUE_TYPES = (ResolveFindings, SetValue, ReplaceValues, ReplaceText, Scale, Add
 SHAPE_TYPES = (Unpivot, Pivot, SplitRows, AllocateByShare, Aggregate, BucketOthers, NetNextPeriod, AppendRows,
                LookupJoin, ConvertCurrency, SortRows, MakeDate, MakePeriod, DropColumns, DropTable)
 OPERATION_TYPES = VALUE_TYPES + SHAPE_TYPES
-Operation = Annotated[Union[OPERATION_TYPES], Field(discriminator="op")]
+# Written out (not Union[OPERATION_TYPES]) so the type checker knows the members; tests/test_agent_registry.py checks
+# it lists exactly OPERATION_TYPES.
+Operation = Annotated[
+    Union[ResolveFindings, SetValue, ReplaceValues, ReplaceText, Scale, AddColumn, RenameColumn, RemoveRows, SplitColumn,
+          Classify, Unpivot, Pivot, SplitRows, AllocateByShare, Aggregate, BucketOthers, NetNextPeriod, AppendRows,
+          LookupJoin, ConvertCurrency, SortRows, MakeDate, MakePeriod, DropColumns, DropTable],
+    Field(discriminator="op")]
 OPERATION_NAMES = [t.model_fields["op"].default for t in OPERATION_TYPES]
 VALUE_OPS = {t.model_fields["op"].default for t in VALUE_TYPES}
 SHAPE_OPS = {t.model_fields["op"].default for t in SHAPE_TYPES}

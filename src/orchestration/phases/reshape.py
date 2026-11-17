@@ -63,17 +63,23 @@ def workspace(run: Path, tables: list[dict], params: dict):
 
 
 def replay(run: Path, tables: list[dict], params: dict) -> None:
-    """Run the recipe (possibly empty) on Phase A's current tables. A step that no longer fits stops the replay; the
+    """Run the recipe, if there is one, on Phase A's current tables. A step that no longer fits stops the replay; the
     result then says which step, and Phase A cannot be accepted until it is undone or replaced."""
     from src.agent.errors import AgentError
     wipe(out(run))
-    if not inputs(run, tables):
-        return                                               # nothing selected: Phase A itself reports that
+    if not has_steps(run) or not inputs(run, tables):
+        return                    # no recipe (the usual case): nothing is copied, Phase B reads Phase A's tables as they are
     out(run).mkdir(parents=True, exist_ok=True)
     try:
         workspace(run, tables, params).run_recipe()
     except AgentError as e:
         raise PhaseError(e.code, e.message) from e
+
+
+def views(run: Path, tables: list[dict]):
+    """Read-only data for the chat screen: the recipe's result, or the input tables while there is no recipe yet."""
+    from src.agent.transform.workspace import TransformViews
+    return TransformViews(out(run), inputs(run, tables))
 
 
 def summary(run: Path) -> dict | None:

@@ -244,6 +244,7 @@ def add_column(s: EditSession, op: AddColumn) -> None:
         if column_in(t, op.name) == op.name or op.name in t.cols:
             raise AgentError("column_exists", f"{label(t)} already has a column '{op.name}'.")
         n = len(t.data["_row_id"])
+        values: list[str | None]
         if op.value is not None:
             values = [op.value] * n
             why = f"Column added by the agent with the value {op.value!r}."
@@ -265,7 +266,7 @@ def add_column(s: EditSession, op: AddColumn) -> None:
             parsed = {c: [parse_number(v, sym, t.eu(c)) if v is not None else None for v in t.data[c]] for c in used}
             values = []
             for i in range(n):
-                row = {c: (Decimal(parsed[c][i]) if parsed[c][i] is not None else None) for c in used}
+                row = {c: (Decimal(str(parsed[c][i])) if parsed[c][i] is not None else None) for c in used}
                 r = fn(row)
                 values.append(None if r is None else _num_text(r if r == r.to_integral_value() else r.quantize(Decimal("0.000001"))))
             blanks = sum(v is None for v in values)
@@ -303,10 +304,11 @@ def split_parts(v: str | None, op: SplitColumn) -> list[str | None]:
         return [None] * n
     if op.pattern is not None:
         m = safe_regex.compiled(op.pattern).search(v)
-        parts = list(m.groups()) if m and m.groups() else []
+        found: list[str | None] = list(m.groups()) if m and m.groups() else []
     else:
-        parts = [p.strip() for p in (v.split(op.separator, n - 1) if op.separator.strip() else v.split(None, n - 1))]
-    parts = [p if p not in ("", None) else None for p in parts][:n]
+        sep = op.separator or ""                              # the model guarantees a separator when there is no pattern
+        found = [p.strip() for p in (v.split(sep, n - 1) if sep.strip() else v.split(None, n - 1))]
+    parts = [p if p not in ("", None) else None for p in found][:n]
     return parts + [None] * (n - len(parts))
 
 
@@ -350,9 +352,9 @@ def classify(s: EditSession, op: Classify) -> None:
             s.add_column(t, op.column, values, f"Column added by the agent: {op.column} by {len(op.rules)} rule(s).")
             continue
         why = f"Classified by the agent into {target}."
-        for i, k in enumerate(chosen):
-            if k is not None:
-                s.edit(t, target, i, op.rules[k].value, why)
+        for i, picked in enumerate(chosen):
+            if picked is not None:
+                s.edit(t, target, i, op.rules[picked].value, why)
             elif not op.keep_existing:
                 s.edit(t, target, i, op.default, why)
 

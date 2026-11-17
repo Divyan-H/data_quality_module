@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from typing import Any, Callable
 from fnmatch import fnmatch
 
 import polars as pl
@@ -27,7 +28,7 @@ from ..executors import compile_formula, split_parts
 from ..operations import (AddColumn, Aggregate, AllocateByShare, AppendRows, BucketOthers, Classify, Condition,
                           ConvertCurrency, DropColumns, DropTable, LookupJoin, MakeDate, MakePeriod, NetNextPeriod, Pivot,
                           RemoveRows, RenameColumn, ReplaceText, ReplaceValues, RowFilter, Scale, SetValue, SortRows,
-                          SplitColumn, SplitRows, Unpivot)
+                          SplitColumn, SplitRows, Unpivot, value_list)
 from ..selectors import as_date, find_column, text_key
 
 SYS = ("_row_id", "_source_row")
@@ -56,10 +57,13 @@ class Effect:
 
     def finish(self, tables: Tables) -> dict:
         after = {n: (df.height, data_cols(df)) for n, df in tables.items()}
-        changes = []
+        changes: list[dict] = []
         for name in dict.fromkeys([*self.before, *after]):
             b, a = self.before.get(name), after.get(name)
+            if b is None and a is None:
+                continue
             if b is None:
+                assert a is not None
                 changes.append({"table": name, "rows_before": None, "rows_after": a[0], "new": True,
                                 "columns_added": a[1], "columns_removed": []})
             elif a is None:
@@ -69,7 +73,8 @@ class Effect:
                 changes.append({"table": name, "rows_before": b[0], "rows_after": a[0],
                                 "columns_added": [c for c in a[1] if c not in b[1]],
                                 "columns_removed": [c for c in b[1] if c not in a[1]]})
-        focus = self.focus if self.focus in tables else next((c["table"] for c in changes if c.get("rows_after")), None)
+        focus: str | None = self.focus if self.focus in tables else next(
+            (str(c["table"]) for c in changes if c.get("rows_after")), None)
         sample = None
         if focus:
             df = tables[focus]
@@ -208,7 +213,7 @@ def condition_expr(df: pl.DataFrame, cond: Condition, table: str = "") -> pl.Exp
         e = e.fill_null(False)
         return e if op == "eq" else ~e
     if op in ("in", "not_in"):
-        e = key.is_in([text_key(x) for x in v]).fill_null(False)
+        e = key.is_in([text_key(x) for x in value_list(v)]).fill_null(False)
         return e if op == "in" else ~e
     if op == "contains":
         return key.str.contains(text_key(v), literal=True).fill_null(False)
@@ -388,7 +393,7 @@ def add_column(tables: Tables, op: AddColumn, fx: Effect) -> None:
             if missing:
                 fx.note(f"{len(missing)} value(s) of {src} are not in the mapping and get "
                         f"{'an empty cell' if op.default is None else repr(op.default)}.")
-                fx.unmatched += [render(v) for v in missing]
+                fx.unmatched += [str(render(v)) for v in missing]
         else:
             fn, used = compile_formula(op.formula or "", data_cols(df))
             cols = {c: numbers(df, c) for c in used}
@@ -523,7 +528,7 @@ def pivot(tables: Tables, op: Pivot, fx: Effect) -> None:
         df = df.with_columns(number_expr(df, vals).alias(vals))
     agg = {"sum": "sum", "mean": "mean", "first": "first", "count": "len"}[op.agg]
     wide = df.with_columns(pl.col(on).map_elements(render, return_dtype=pl.String, skip_nulls=True)) \
-        .pivot(on=on, index=index, values=vals, aggregate_function=agg, maintain_order=True)
+        .pivot(on=on, index=index, values=vals, aggregate_function=agg, maintain_order=True)  # type: ignore[arg-type]  # one of four literals
     wide = wide.with_columns(pl.format("g{}", pl.int_range(1, pl.len() + 1)).alias("_row_id"))
     tables[name] = whole(wide, [c for c in wide.columns if c not in index and c != "_row_id"])
     fx.focus = name
@@ -554,7 +559,7 @@ def split_rows(tables: Tables, op: SplitRows, fx: Effect) -> None:
     df = tables[name]
     col = column(df, op.column, name)
     alloc = [column(df, c, name) for c in op.allocate]
-    parts = [split_items(render(v), op.separators, op.keep_together) if v is not None else [None]
+    parts = [split_items(str(render(v)), op.separators, op.keep_together) if v is not None else [None]
              for v in df[col].to_list()]
     n = [len(p) for p in parts]
     multi = sum(1 for k in n if k > 1)
@@ -616,7 +621,7 @@ def allocate_by_share(tables: Tables, op: AllocateByShare, fx: Effect) -> None:
     cols = [column(df, c, name) for c in op.columns]
     if cat in df.columns:
         raise AgentError("column_exists", f"{name} already has a column '{cat}'.")
-    groups: dict[tuple, list[tuple[str, float | None]]] = {}
+    groups: dict[tuple, list[tuple[str | None, float | None]]] = {}
     shares = numbers(sh, share) if share else [None] * sh.height
     for k, c, s in zip(_keys(sh, right_on), sh[cat].to_list(), shares):
         groups.setdefault(k, []).append((render(c), s))
@@ -636,9 +641,9 @@ def allocate_by_share(tables: Tables, op: AllocateByShare, fx: Effect) -> None:
             records.append({**row, cat: op.unmatched_label, **{c: values[c][i] for c in cols}})
             continue
         used.add(k)
-        frac_left = 1 - sum(f for _, f in parts)
+        frac_left = 1 - sum(f or 0.0 for _, f in parts)
         plan = parts + ([(op.unmatched_label, frac_left)] if frac_left > 0.001 else [])
-        alloc = {c: _allocate(values[c][i], [f for _, f in plan], op.integer) for c in cols}
+        alloc = {c: _allocate(values[c][i], [f or 0.0 for _, f in plan], op.integer) for c in cols}
         for j, (city, _) in enumerate(plan):
             records.append({**row, "_row_id": f"{ids[i]}:a{j + 1}", cat: city, **{c: alloc[c][j] for c in cols}})
     if op.keep_unmatched_shares:
@@ -647,13 +652,13 @@ def allocate_by_share(tables: Tables, op: AllocateByShare, fx: Effect) -> None:
         for k, srow in zip(_keys(sh, right_on), srows):
             if k not in used:
                 extra += 1
-                rec = {c: None for c in df.columns if c not in cols}
+                rec: dict = {c: None for c in df.columns if c not in cols}
                 rec.update({lc: srow[rc] for lc, rc in zip(left_on, right_on)})
-                rec.update({"_row_id": f"{sname}:{extra}", cat: srow[cat], **{c: 0.0 for c in cols}})
+                rec.update({"_row_id": f"{sname}:{extra}", cat: srow[cat], **dict.fromkeys(cols, 0.0)})
                 records.append(rec)
         if extra:
             fx.note(f"{extra} row(s) of {sname} had no matching row; kept with zero {', '.join(cols)}.")
-    schema = {**{c: df.schema[c] for c in df.columns if c not in cols}, cat: pl.String, **{c: pl.Float64 for c in cols}}
+    schema: dict = {**{c: df.schema[c] for c in df.columns if c not in cols}, cat: pl.String, **dict.fromkeys(cols, pl.Float64)}
     out = pl.DataFrame(records, schema=schema, strict=False).select([*[c for c in df.columns if c not in cols], cat, *cols])
     if "_source_row" in out.columns:
         out = out.with_columns(pl.lit(None, dtype=out.schema["_source_row"]).alias("_source_row"))
@@ -708,6 +713,8 @@ def bucket_others(tables: Tables, op: BucketOthers, fx: Effect) -> None:
         rcol = column(ref, op.keep_from.get("column", op.column), op.keep_from.get("table", ""))
         keep = {text_key(v) for v in ref[rcol].drop_nulls().to_list()}
     else:
+        if op.top_n is None:
+            raise AgentError("bad_step", "Say which values to keep: a list, a table and column to take them from, or a top N.")
         top = df.group_by(text_expr(col).alias("_k")).len().sort("len", descending=True).head(op.top_n)
         keep = set(top["_k"].drop_nulls().to_list())
     other = ~text_expr(col).is_in(list(keep)).fill_null(False) & pl.col(col).is_not_null()
@@ -975,7 +982,7 @@ def drop_table(tables: Tables, op: DropTable, fx: Effect) -> None:
     del tables[name]
 
 
-EXECUTORS = {
+EXECUTORS: dict[str, Callable[[Tables, Any, Effect], None]] = {
     "set_value": set_value, "replace_values": replace_values, "replace_text": replace_text, "scale": scale,
     "add_column": add_column, "rename_column": rename_column, "remove_rows": remove_rows, "split_column": split_column,
     "classify": classify, "unpivot": unpivot, "pivot": pivot, "split_rows": split_rows,

@@ -66,4 +66,4 @@ def assess(ops: list, preview: dict, confirm_cells: int = CONFIRM_CELLS) -> dict
 
 
 def needs_confirmation(review: dict | None) -> bool:
-    return bool(review) and review.get("level") == ELEVATED
+    return review is not None and review.get("level") == ELEVATED

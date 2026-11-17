@@ -3,6 +3,10 @@
 Date: 2026-11-12. Branch `production-hardening`. Starting point: `b357191`. Companion documents:
 `01_initial_assessment.md` (findings and plan) and `REVIEW_CHECKLIST.md` (what was actually inspected).
 
+> **Later changes.** Since this assessment: transformations moved into Phase A (1.2.0) and a review pass type-checked
+> the agent package and fixed three more defects (1.2.1). The verdict below still stands; the open items are kept
+> current in [`IMPROVEMENTS.md`](../../IMPROVEMENTS.md).
+
 ## Verdict
 
 **Ready for a controlled pilot on one server, behind the reverse proxy, for one trusted team. Not ready for wider

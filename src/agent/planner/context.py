@@ -5,11 +5,12 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import Sequence
 
 from src.hygiene.config import RULE_TEXT
-from src.hygiene.table import Table
 
 from ..selectors import find_column, label, text_key
+from ..tables import PlanTable
 
 TOP_VALUES = 6
 MAX_GROUP_EXAMPLES = 3
@@ -72,7 +73,7 @@ def rules_for_words(text: str) -> list[str]:
 
 
 class PlanningContext:
-    def __init__(self, tables: list[Table], phase: str = "B", history: list[dict] | None = None):
+    def __init__(self, tables: Sequence[PlanTable], phase: str = "B", history: list[dict] | None = None):
         self.tables = tables
         self.phase = phase                      # "B": value changes only; "T": reshaping too
         self.history = history or []            # earlier turns {role, text, ops?, status?} for the model (memory)
@@ -181,7 +182,7 @@ class PlanningContext:
         for t in self.tables:
             cols = []
             for c in t.cols:
-                entry = {"name": c, "kind": t.types.get(c, "text")}
+                entry: dict = {"name": c, "kind": t.types.get(c, "text")}
                 if privacy == "full" and t.types.get(c) not in ("numeric",):
                     top = Counter(v for v in t.data[c] if v is not None).most_common(TOP_VALUES)
                     entry["top_values"] = [v for v, _ in top]

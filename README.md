@@ -64,6 +64,7 @@ Details, backups, upgrades and rollback: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md
 | [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md) | Every setting |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Local setup, adding a rule / operation / phase |
 | [docs/TESTING.md](docs/TESTING.md) | Test layers, gates, what is and is not verified |
+| [IMPROVEMENTS.md](IMPROVEMENTS.md) | What is still not good enough, in priority order |
 | [CHANGELOG.md](CHANGELOG.md) | What changed |
 | [docs/audit/](docs/audit/) | The November 2026 engineering audit and readiness assessment |
 
@@ -73,4 +74,4 @@ Phase specifications are in `docs/architecture/specs/`; per-phase implementation
 
 Single-server deployment, one shared access token, human approval on every change. Not yet built: per-user accounts
 and client separation, multi-server operation, Phases E–G (mapping, load, pre-load checks). The honest list is in
-[docs/audit/02_final_assessment.md](docs/audit/02_final_assessment.md).
+[IMPROVEMENTS.md](IMPROVEMENTS.md).

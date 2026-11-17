@@ -197,7 +197,7 @@ class LlmPlanner:
         call with the reason (a repair attempt); after that the analyst is asked to rephrase. `self.trace` records
         what happened, for the audit log and the evaluation report."""
         self.trace = {"calls": 0, "outcome": "unavailable", "repaired": False, "prompt_version": PROMPT_VERSION}
-        if not self.available():
+        if self.client is None or not self.available():
             return None
         system, problem = system_prompt(ctx.phase), None
         for attempt in range(1, MAX_ATTEMPTS + 1):

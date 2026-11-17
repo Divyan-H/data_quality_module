@@ -240,7 +240,7 @@ def make_columns(view: View, header_rows: list[int], group_rows: list[int], unit
     for c in view.cols:
         cell = view.rows.get(low, {}).get(c)
         label = cell.text if cell is not None else None
-        groups = [m[c] for m in group_maps if c in m and m[c]]
+        groups = [m[c] for m in group_maps if m.get(c)]
         ucell = view.rows.get(unit, {}).get(c) if unit else None
         cols.append({"col": c, "letter": col_letter(c), "label": label, "groups": groups,
                      "unit": (ucell.text.strip() if ucell is not None and ucell.text else None)})

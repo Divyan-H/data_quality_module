@@ -21,18 +21,34 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from typing import TYPE_CHECKING, Callable
 
 from ..operations import (Aggregate, AllocateByShare, AppendRows, BucketOthers, Classify, ConvertCurrency, DropColumns,
                           DropTable, LookupJoin, MakeDate, MakePeriod, NetNextPeriod, Pivot, Plan, Rule, SortRows,
                           SplitColumn, SplitRows, Unpivot)
+
+if TYPE_CHECKING:
+    from ..operations import Condition
+    from .context import PlanningContext
 
 SEPARATOR_WORDS = {"space": " ", "spaces": " ", "comma": ",", "commas": ",", "dash": "-", "hyphen": "-", "slash": "/",
                    "semicolon": ";", "pipe": "|", "underscore": "_", "colon": ":", "dot": ".", "period": "."}
 
 
 class TransformCommands:
-    """Needs from the host: self.ctx (PlanningContext), self.column(), self.columns(), self.conditions(), Ask, and the
-    helpers split_values / unquote / parse_number passed in at import time by parser.py."""
+    """Needs from the host (CommandParser): self.ctx, self.column(), self.columns(), self.conditions(), Ask, and the
+    helpers split_values / unquote / parse_number. They are declared here so the type checker can verify the calls."""
+
+    ctx: PlanningContext
+    Ask: type[Exception]
+    split_values: Callable[[str], list[str]]
+    unquote: Callable[[str], str]
+    parse_number: Callable[[str], float | None]
+
+    if TYPE_CHECKING:
+        def column(self, name: str) -> str: ...
+        def columns(self, spec: str) -> list[str]: ...
+        def conditions(self, spec: str) -> list[Condition]: ...
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _table_tail(self, text: str) -> tuple[str | None, str]:
@@ -198,10 +214,10 @@ class TransformCommands:
             return None
         table, by = self._table_tail(m.group("by"))
         if table is None:
-            table, cols = self._table_tail(m.group("cols"))
+            table, spec = self._table_tail(m.group("cols"))
         else:
-            cols = m.group("cols")
-        cols = self.columns(cols)
+            spec = m.group("cols")
+        cols = self.columns(spec)
         mean = m.group("verb").lower() in ("average", "mean")
         return Plan(ops=[Aggregate(table=table, by=self.columns(by), **({"mean": cols} if mean else {"sum": cols}))])
 

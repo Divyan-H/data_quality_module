@@ -30,9 +30,22 @@ UNDO_DEPTH = 10                                   # applied change-sets that kee
 class AgentService:
     def __init__(self, workspace: Workspace | None, store: AgentStore, planner: Planner | None, library: RecipeLibrary | None = None,
                  audit=None, run_id: str | None = None, confirm_cells: int = guardrails.CONFIRM_CELLS):
-        self.ws, self.store, self.planner = workspace, store, planner
+        self._ws, self.store, self._planner = workspace, store, planner
         self.library = library or getattr(workspace, "library", None) or RecipeLibrary(None)
         self.audit, self.run_id, self.confirm_cells = audit, run_id, confirm_cells
+
+    @property
+    def ws(self) -> Workspace:
+        """The phase's data. Only `discard` works without one (it touches the proposal alone)."""
+        if self._ws is None:
+            raise AgentError("not_ready", "This action needs the phase's data, which is not loaded.")
+        return self._ws
+
+    @property
+    def planner(self) -> Planner:
+        if self._planner is None:
+            raise AgentError("not_ready", "No planner is configured for this action.")
+        return self._planner
 
     def _audit(self, action: str, **detail) -> None:
         if self.audit is not None:
@@ -44,7 +57,7 @@ class AgentService:
         sets = {c.id: c for c in self.store.all()}
         turns = []
         for m in self.store.messages()[-HISTORY_MESSAGES:]:
-            turn = {"role": m.role, "text": m.text if m.role == "user" else m.text.split("\n", 1)[0]}
+            turn: dict = {"role": m.role, "text": m.text if m.role == "user" else m.text.split("\n", 1)[0]}
             cs = sets.get(m.changeset) if m.kind == "proposal" and m.changeset else None
             if cs is not None:
                 turn.update(ops=cs.plan, status=cs.status)
@@ -76,7 +89,7 @@ class AgentService:
         if plan is None:
             tables = self.ws.load()
             plan = self.planner.plan(text, PlanningContext(tables, self.ws.phase, history))
-        llm = getattr(self.planner, "llm", None)
+        llm = self.planner.llm
         trace = dict(llm.trace) if llm is not None and plan.source == "llm" else None
         kind = "ask" if plan.ask else "answer" if plan.answer else "plan"
         log.info("agent plan", extra={"source": plan.source, "kind": kind, "operations": [op.op for op in plan.ops],
@@ -137,7 +150,8 @@ class AgentService:
         from . import describe
         phase = self.ws.phase
         if phase == "T":
-            steps, skipped = self.ws.recipe(), []
+            steps: list = self.ws.recipe()
+            skipped: list = []
         else:
             applied = sorted((c for c in self.store.all() if c.status == "applied"), key=lambda c: (c.applied_at or "", c.id))
             steps, skipped = replayable([op for c in applied for op in c.operations()])
@@ -160,6 +174,7 @@ class AgentService:
             extra = f"\n({len(skipped)} applied step(s) name Excel rows and would not be saved.)" if skipped else ""
             return Plan(answer=("The steps a saved recipe would hold:\n" + "\n".join(lines) + extra) if lines else
                         "No replayable steps yet." + extra)
+        assert using is not None                         # the only pattern left
         return Plan(ops=self.library.load(using.group(1), phase), source="rules")
 
     # ── apply ────────────────────────────────────────────────────────────────
@@ -181,7 +196,7 @@ class AgentService:
         cs = self._proposal(cs_id)
         if guardrails.needs_confirmation(cs.review) and not confirm:
             raise AgentError("confirmation_required", "This change needs an explicit confirmation: "
-                             + " ".join(cs.review["reasons"]) + " Check the preview, then confirm.")
+                             + " ".join((cs.review or {}).get("reasons", [])) + " Check the preview, then confirm.")
         try:
             result = self.ws.apply(cs.operations(), cs.id, cs.instruction, cs.base_version, self.store.snapshot_dir(cs.id))
         except AgentError as e:

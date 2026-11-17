@@ -14,7 +14,7 @@
    "accuracy": 0.7364,
    "wrong_rate": 0.0,
    "p50_s": 0.0,
-   "p95_s": 0.005,
+   "p95_s": 0.006,
    "answered_by_rules": 70,
    "answered_by_model": 0
   },
@@ -27,7 +27,7 @@
     "accuracy": 0.9818,
     "wrong_rate": 0.0,
     "p50_s": 0.002,
-    "p95_s": 0.005,
+    "p95_s": 0.006,
     "answered_by_rules": 54,
     "answered_by_model": 0
    },
@@ -65,7 +65,7 @@
     "accuracy": 0.7812,
     "wrong_rate": 0.0,
     "p50_s": 0.0,
-    "p95_s": 0.005,
+    "p95_s": 0.006,
     "answered_by_rules": 42,
     "answered_by_model": 0
    },
@@ -95,7 +95,7 @@
     "resolve_findings"
    ],
    "kind": "plan",
-   "seconds": 0.011,
+   "seconds": 0.012,
    "note": ""
   },
   {
@@ -193,7 +193,7 @@
     "replace_text"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -207,7 +207,7 @@
     "set_value"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.004,
    "note": ""
   },
   {
@@ -249,7 +249,7 @@
     "set_value"
    ],
    "kind": "plan",
-   "seconds": 0.001,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -263,7 +263,7 @@
     "set_value"
    ],
    "kind": "plan",
-   "seconds": 0.001,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -305,7 +305,7 @@
     "scale"
    ],
    "kind": "plan",
-   "seconds": 0.001,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -319,7 +319,7 @@
     "add_column"
    ],
    "kind": "plan",
-   "seconds": 0.005,
+   "seconds": 0.006,
    "note": ""
   },
   {
@@ -333,7 +333,7 @@
     "add_column"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.006,
    "note": ""
   },
   {
@@ -347,7 +347,7 @@
     "add_column"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.006,
    "note": ""
   },
   {
@@ -375,7 +375,7 @@
     "remove_rows"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -389,7 +389,7 @@
     "remove_rows"
    ],
    "kind": "plan",
-   "seconds": 0.001,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -403,7 +403,7 @@
     "split_column"
    ],
    "kind": "plan",
-   "seconds": 0.005,
+   "seconds": 0.006,
    "note": ""
   },
   {
@@ -417,7 +417,7 @@
     "classify"
    ],
    "kind": "plan",
-   "seconds": 0.004,
+   "seconds": 0.005,
    "note": ""
   },
   {
@@ -509,7 +509,7 @@
     "unpivot"
    ],
    "kind": "plan",
-   "seconds": 0.004,
+   "seconds": 0.005,
    "note": ""
   },
   {
@@ -551,7 +551,7 @@
     "split_rows"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -565,7 +565,7 @@
     "split_column"
    ],
    "kind": "plan",
-   "seconds": 0.001,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -579,7 +579,7 @@
     "aggregate"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.004,
    "note": ""
   },
   {
@@ -593,7 +593,7 @@
     "aggregate"
    ],
    "kind": "plan",
-   "seconds": 0.001,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -607,7 +607,7 @@
     "bucket_others"
    ],
    "kind": "plan",
-   "seconds": 0.008,
+   "seconds": 0.007,
    "note": ""
   },
   {
@@ -621,7 +621,7 @@
     "allocate_by_share"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -691,7 +691,7 @@
     "sort_rows"
    ],
    "kind": "plan",
-   "seconds": 0.001,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -747,7 +747,7 @@
     "pivot"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.004,
    "note": ""
   },
   {
@@ -787,7 +787,7 @@
     "rename_column"
    ],
    "kind": "plan",
-   "seconds": 0.0,
+   "seconds": 0.001,
    "note": ""
   },
   {
@@ -815,7 +815,7 @@
     "classify"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -913,7 +913,7 @@
     "replace_text"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -963,7 +963,7 @@
     "replace_values"
    ],
    "kind": "plan",
-   "seconds": 0.001,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -991,7 +991,7 @@
     "replace_values"
    ],
    "kind": "plan",
-   "seconds": 0.001,
+   "seconds": 0.002,
    "note": ""
   },
   {

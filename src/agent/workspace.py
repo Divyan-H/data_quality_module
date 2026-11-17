@@ -13,6 +13,7 @@ import json
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Sequence
 
 from src.hygiene.pipeline import OUT, save
 from src.hygiene.review import add_columns, load_clean_tables, recheck, split_rows
@@ -22,19 +23,24 @@ from . import describe
 from .errors import AgentError, StaleProposal
 from .executors import execute
 from .session import AGENT_RULE, EditSession
+from .tables import PlanTable
 
 SNAPSHOT_SKIP = {"review_versions"}            # kept in place across restores: the history of downloads and uploads
 
 
 class Workspace(ABC):
-    phase: str = ""
+    phase: str = ""                              # which tool set applies: "B" value fixes, "T" reshaping (registry.py)
+
+    def recipe(self) -> list:
+        """The steps applied so far, for workspaces that keep a recipe (reshaping). Others have none."""
+        return []
 
     @abstractmethod
     def version(self) -> str:
         """Changes whenever the phase's data or review items change (any apply, upload or re-run)."""
 
     @abstractmethod
-    def load(self) -> list[Table]:
+    def load(self) -> Sequence[PlanTable]:
         ...
 
     @abstractmethod

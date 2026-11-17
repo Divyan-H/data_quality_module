@@ -46,9 +46,9 @@ CHECKS = {
     "N-15": ("Duplicate Variable Names", "Checks duplicate variable names."),
 }
 # The sheet each code's findings are listed on.
-SHEET = {**{c: "Variable_Checks" for c in ("N-01", "N-02", "N-03", "N-04", "N-05", "N-15")},
+SHEET = {**dict.fromkeys(("N-01", "N-02", "N-03", "N-04", "N-05", "N-15"), "Variable_Checks"),
          "N-07": "No_Executions", "N-08": "WOW_Duplicates", "N-09": "MOM_Duplicates",
-         "N-10": "Duplicate_Variable_Data", **{c: "Date_Integrity" for c in ("N-11", "N-12", "N-13", "N-14")}}
+         "N-10": "Duplicate_Variable_Data", **dict.fromkeys(("N-11", "N-12", "N-13", "N-14"), "Date_Integrity")}
 VALUE_CODES = ["N-02", "N-03", "N-04", "N-01", "N-05"]     # the reference's order within a variable
 CADENCES = [("daily", 0, 2, 1, 0), ("weekly", 5, 9, 7, 0), ("monthly", 27, 32, 0, 1), ("quarterly", 85, 95, 0, 3),
             ("yearly", 355, 370, 0, 12)]                   # level, median gap range (days), step in days or months

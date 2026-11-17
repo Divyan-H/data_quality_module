@@ -1,5 +1,7 @@
 # Data Pipeline service: open issues, improvements, and running it in a bigger system
 
+> **Superseded (2026-11-17).** The current list of open issues is [`IMPROVEMENTS.md`](../IMPROVEMENTS.md); this file is kept for its history.
+
 Status of the service as of 2026-10-13. Phases A to D and the analyst web app are built and tested (416 backend tests, 53 frontend
 tests, end-to-end acceptance tests). This document is the honest list of what is still wrong, what should get better, and what has
 to change before the service runs on a server or as one part of a larger architecture.

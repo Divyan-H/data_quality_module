@@ -15,7 +15,7 @@
 ## Commands
 
 ```bash
-python -m pytest -q -n auto            # 734 tests, about 2 minutes on 4 cores
+python -m pytest -q -n auto            # 739 tests, about 2 minutes on 4 cores
 ```
 
 ```bash
@@ -33,7 +33,7 @@ python -m src.agent.evaluation --llm on --model qwen2.5:7b-instruct      # needs
 ## Gates in CI (`.github/workflows/ci.yml`)
 
 Dependencies installed with hashes · `ruff` · `mypy` on `src/api`, `src/orchestration`, `src/storage`,
-`src/security`, `src/observability` · `bandit` (medium and above) · `pip-audit` · the full test suite · the
+`src/security`, `src/observability`, `src/agent` · `bandit` (medium and above) · `pip-audit` · the full test suite · the
 evaluation report as an artifact · `npm audit` (high and above) · frontend typecheck, tests, build · image build
 and a smoke test of the running container.
 
@@ -42,7 +42,7 @@ and a smoke test of the running container.
 | Gap | Why it matters |
 |---|---|
 | **The local model's accuracy** | Unit tests use a scripted stand-in; the evaluation with a real model has not been run (no model registry access in the build environment) |
-| Type checking of the domain packages | `mypy src` reports 254 errors outside the gated packages (agent 131, structure 50, timeseries 30, trends 18, hygiene 14, common 11). Most are untyped containers and a mixin pattern; one real bug was found this way in the gated code, so more may exist |
+| Type checking of the phase packages | `mypy src` reports 123 errors outside the gated packages (structure 50, timeseries 30, trends 18, hygiene 14, common 11). Each package gated so far exposed a real bug, so more may exist |
 | Browser tests | No Playwright: real drag-and-drop uploads and downloads in a browser are unverified |
 | Load and concurrency | No test with many simultaneous analysts or sustained job throughput |
 | Restore drill | Backup commands are documented, not exercised |

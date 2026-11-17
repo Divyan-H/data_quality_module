@@ -8,6 +8,7 @@ import threading
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -18,7 +19,7 @@ from src.hygiene.pipeline import OUT
 from .errors import AgentError
 
 MAX_PAGE = 500
-_cache: dict[Path, tuple[int, object]] = {}
+_cache: dict[Path, tuple[Any, Any]] = {}       # path -> (stamp of the file(s), parsed content)
 _lock = threading.Lock()
 
 

@@ -33,7 +33,7 @@ ruff check src tests
 ```
 
 ```bash
-mypy src/api src/orchestration src/storage src/security src/observability
+mypy src/api src/orchestration src/storage src/security src/observability src/agent
 ```
 
 ```bash

@@ -53,7 +53,7 @@ def keep_version(out: Path, src: Path, kind: str) -> int:
     return n
 
 
-def review_value(v) -> str | None | bool:
+def review_value(v) -> str | bool | None:
     """None = blank, one of STATUSES (any case, spacing or dash; "Valid" and "Confirmed" alone too), False = other."""
     if v is None or not str(v).strip():
         return None

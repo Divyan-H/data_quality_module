@@ -231,3 +231,33 @@ def test_phases_b_c_and_d_give_the_same_findings_on_a_table_that_went_through_th
         assert tc.view(rid)["complete"]
         counts[name] = (b["totals"]["needs_review_open"], per_phase)
     assert counts["plain"] == counts["through the recipe"], counts
+
+
+def test_without_a_recipe_nothing_is_copied_and_the_reshape_screen_shows_phase_a_tables(tc, reactivation_xlsx):
+    rid = tc.create([("reactivation.xlsx", reactivation_xlsx)], name="lazy")
+    phase_a(tc, rid)
+    run_dir = tc.c.app.state.pipeline.store.path(rid)
+    assert not (run_dir / "phase_a_shaped").exists()                                   # no second copy of every table
+    issues = tc.c.get(f"/api/v1/runs/{rid}/phases/A/agent/issues").json()
+    assert {t["ref"]: t["rows"] for t in issues["tables"]} == {"Reactivation": 4, "Cities": 2} and issues["steps"] == []
+    page = tc.c.get(f"/api/v1/runs/{rid}/phases/A/agent/rows", params={"table": "Reactivation", "offset": 1, "limit": 2}).json()
+    assert page["total"] == 4 and len(page["rows"]) == 2 and page["rows"][0]["values"]["Month"] == "Jan-25"
+    build(tc, rid, "sort Cities by City")                                              # the first step creates it
+    assert (run_dir / "phase_a_shaped" / "run.json").exists()
+    tc.undo(rid, key="A")                                                              # and undoing it removes it again
+    assert not (run_dir / "phase_a_shaped" / "run.json").exists() and tc.summary(rid, "A")["reshape"] is None
+
+
+def test_a_selection_that_breaks_the_recipe_reopens_an_accepted_phase_a(tc, reactivation_xlsx):
+    rid = tc.create([("reactivation.xlsx", reactivation_xlsx)], name="selection breaks")
+    s = phase_a(tc, rid)
+    refs = {t["sheet"]: t["ref"] for t in s["tables"]}
+    build(tc, rid, "sort Cities by City")
+    tc.accept(rid, "A")
+    assert tc.phase(rid, "B")["status"] == "ready"
+    r = tc.c.post(f"/api/v1/runs/{rid}/phases/A/selection", json={"tables": [refs["Reactivation"]]})   # Cities is gone
+    assert r.status_code == 200, r.text
+    a = tc.phase(rid, "A")
+    assert a["status"] == "review" and not a["can_continue"] and "Step 1" in a["blocked_reason"]
+    assert tc.phase(rid, "B")["status"] == "locked"
+    tc.start(rid, "B", {"llm": "off"}, expect=409)                                     # nothing runs on half a recipe
