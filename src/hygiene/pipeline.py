@@ -80,7 +80,8 @@ def save(run_dir: Path, tables: list[Table], unreadable: list[dict], cfg: dict, 
 
 
 def run_hygiene(input_path: str, run_dir: str, settings: str | None = None, overrides: dict | None = None,
-                sheet: str | None = None, tables: list[str] | None = None, all_tables: bool = False) -> dict:
+                sheet: str | None = None, tables: list[str] | None = None, all_tables: bool = False,
+                shaped: str | None = None) -> dict:
     """Clean every selected table found under `input_path` (a Phase A output folder or a single file)."""
     cfg = load_config(settings, overrides)
     log = run_logger(Path(run_dir), "dq.hygiene")
@@ -92,7 +93,8 @@ def run_hygiene(input_path: str, run_dir: str, settings: str | None = None, over
                               for n, s in zip(names, std) if n}
     if not Path(input_path).exists():
         raise FileNotFoundError(f"input not found: {input_path} (give a Phase A output folder or a csv/xlsx/parquet file)")
-    found, unreadable, skipped = load_tables(Path(input_path), cfg, sheet, tables, all_tables)
+    found, unreadable, skipped = load_tables(Path(input_path), cfg, sheet, tables, all_tables,
+                                             Path(shaped) if shaped else None)
     if not (found or unreadable or skipped):
         raise FileNotFoundError(f"no tables found in {input_path}: expected a Phase A output folder "
                                 "(files/*/tables/*/data.parquet) or csv/xlsx/parquet files")

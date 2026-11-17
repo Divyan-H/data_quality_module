@@ -1,5 +1,6 @@
-export type PhaseKey = "A" | "B" | "C" | "D" | "T";
-export const PHASE_KEYS: PhaseKey[] = ["A", "B", "C", "D", "T"];
+/** Reshaping (the recipe) is the optional second half of Phase A, not a phase of its own. */
+export type PhaseKey = "A" | "B" | "C" | "D";
+export const PHASE_KEYS: PhaseKey[] = ["A", "B", "C", "D"];
 
 export type Status = "locked" | "ready" | "running" | "review" | "accepted" | "failed" | "cancelled";
 
@@ -261,9 +262,9 @@ export interface IssuesView {
   failed?: { step: number; text: string; message: string } | null;
 }
 
+/** What Phase A's reshaping recipe did (Phase A's summary carries it as `reshape`; null when no step was applied). */
 export interface SummaryT {
-  tables: { name: string; rows: number; columns: number; made_here: boolean }[];
-  inputs: { name: string; source_file: string | null; sheet: string | null }[];
+  tables: { name: string; rows: number; columns: number; made_here: boolean; changed?: boolean }[];
   steps: { step: number; text: string; summary: string; notes: string[] }[];
   failed: { step: number; text: string; message: string } | null;
 }
@@ -379,6 +380,7 @@ export interface IssueRow {
 }
 
 export interface SummaryA {
+  reshape?: SummaryT | null;
   files: number;
   sheets: number;
   tables_found: number;

@@ -345,9 +345,10 @@ export function SummaryTView({ s }: { s: SummaryT }) {
         <div className="alert error"><div><b>Step {s.failed.step} does not run on this data</b>{s.failed.text} {s.failed.message}</div></div>
       )}
       <div>
-        <h3>Recipe ({s.steps.length} step{s.steps.length === 1 ? "" : "s"})</h3>
+        <h3>Reshaping recipe ({s.steps.length} step{s.steps.length === 1 ? "" : "s"})</h3>
+        <p className="muted small">These steps run on the tables above before Phases B to D, which then check the result.</p>
         {s.steps.length === 0 ? (
-          <p className="muted small">No steps yet: the final files are the checked tables. Open Transform with agent to add steps.</p>
+          <p className="muted small">No steps yet. Open Reshape with agent to add steps.</p>
         ) : (
           <ol className="recipe-list">
             {s.steps.map((st) => (
@@ -358,10 +359,10 @@ export function SummaryTView({ s }: { s: SummaryT }) {
       </div>
       <div className="table-wrap">
         <table className="t">
-          <thead><tr><th>Output table</th><th className="num">Rows</th><th className="num">Columns</th><th>From</th></tr></thead>
+          <thead><tr><th>Table handed to Phase B</th><th className="num">Rows</th><th className="num">Columns</th><th>Status</th></tr></thead>
           <tbody>
             {s.tables.map((t) => (
-              <tr key={t.name}><td>{t.name}</td><td className="num">{t.rows.toLocaleString()}</td><td className="num">{t.columns}</td><td>{t.made_here ? "made here" : "checked data"}</td></tr>
+              <tr key={t.name}><td>{t.name}</td><td className="num">{t.rows.toLocaleString()}</td><td className="num">{t.columns}</td><td>{t.made_here ? "made by the recipe" : t.changed === false ? "as Phase A found it" : "reshaped"}</td></tr>
             ))}
           </tbody>
         </table>

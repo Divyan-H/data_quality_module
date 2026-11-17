@@ -42,13 +42,13 @@ Base path `/api/v1`. The machine-readable contract is `GET /openapi.json`. Inter
 | `POST /runs/{id}/cancel` | Stop the running job |
 | `GET` / `PUT /runs/{id}/inputs` | Project answers (expected columns, cities, currency) |
 | `POST /runs/{id}/phases/{key}/start` | Start a phase `{llm, llm_review, fixes, zero_expected, restart}` |
-| `POST /runs/{id}/phases/{key}/accept` · `/skip` | Accept · skip (C, D, T) |
+| `POST /runs/{id}/phases/{key}/accept` · `/skip` | Accept · skip (C, D) |
 | `POST /runs/{id}/phases/A/selection` | Choose the tables later phases use |
 | `GET /runs/{id}/phases/{key}/summary` | Result summary |
 | `POST /runs/{id}/phases/{key}/review` | Upload an edited review workbook |
 | `GET …/tables` · `GET …/config-template` · `POST …/config` · `POST …/config/recheck` | Client config workbook (C, D) |
 | `GET …/columns` | Numeric columns for Phase B's start screen |
-| `GET …/agent` | Conversation, change-sets with previews and `review` |
+| `GET …/agent` | Conversation, change-sets with previews and `review`. `{key}` is `A` (reshaping) or `B` (value fixes) |
 | `POST …/agent/messages` `{text}` | Plan and preview an instruction |
 | `POST …/agent/changesets/{cs}/apply` `{confirm}` | Apply; `confirm: true` for an elevated change |
 | `POST …/agent/changesets/{cs}/discard` · `POST …/agent/undo` | Drop a proposal · undo the last change |

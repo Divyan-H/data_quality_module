@@ -65,8 +65,8 @@ def _listed(artifacts: list) -> list[tuple]:
 
 
 def is_complete(phases: dict) -> bool:
-    """The final files are ready: Phase D accepted, and Transformations (optional) either untouched or accepted."""
-    return phases["D"]["status"] == ACCEPTED and phases.get("T", {}).get("status", READY) in (READY, ACCEPTED)
+    """The final files are ready: Phase D accepted."""
+    return phases["D"]["status"] == ACCEPTED
 
 
 def _blank_phase(key: str, status: str) -> dict:
@@ -111,6 +111,11 @@ class Pipeline:
         """A run left 'running' by a previous service process has no worker any more: say so, and let it restart.
         Runs made before a phase existed (Phase T) get it, ready once the phase before it is accepted."""
         for st in self.store.list():
+            if any(k not in ORDER for k in st["phases"]):        # e.g. "T" of runs made when reshaping came after D
+                def drop(s: dict) -> None:
+                    for k in [k for k in s["phases"] if k not in ORDER]:
+                        del s["phases"][k]
+                self.store.update(st["id"], drop)
             missing = [k for k in ORDER if k not in st["phases"]]
             if missing:
                 def add(s: dict, missing=missing) -> None:
@@ -379,6 +384,11 @@ class Pipeline:
             self._clear_from(st, run, "A", include_self=False)
             if ph["status"] == ACCEPTED:
                 st["phases"]["B"]["status"] = READY
+            params = {**ph["params"], "recipes_dir": self.agent.recipes_dir()}
+        # The reshaping recipe (if any) starts from the selected tables: run it again on the new selection.
+        outcome = self._sync_job(run_id, "A", "reshape", params)
+        if not outcome["ok"]:
+            raise PipelineError(422, outcome.get("code") or "reshape_failed", outcome["message"])
         return self.view(run_id)
 
     @audited("review.uploaded", lambda a, k, r: {"file": Path(str(a[2])).name[:120] if len(a) > 2 else None})

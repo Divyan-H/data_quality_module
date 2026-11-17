@@ -95,17 +95,17 @@ export function AgentWorkspace({ run, phase, nextKey, onClose, onAccept, onChang
   }
 
   const review = phase.artifacts.find((a) => a.primary);
-  const transform = phase.key === "T";
+  const transform = phase.key === "A";             // Phase A's agent reshapes tables (the recipe); Phase B's fixes values
   const accepted = phase.status === "accepted";
   const downstream = run.phases.some((p) => p.key > phase.key && p.status !== "locked" && p.status !== "ready");
   return (
     <div className="agent-ws">
       <div className="agent-top">
         <div>
-          <h2>{transform ? "Transform with agent · Phase T" : `Fix with agent · Phase ${phase.key}`}</h2>
+          <h2>{transform ? "Reshape with agent · Phase A" : `Fix with agent · Phase ${phase.key}`}</h2>
           <p className="muted small">
             {transform
-              ? "Say how to reshape the data. Each step is previewed on the current tables; Apply adds it to the recipe, which runs again whenever the checked data changes."
+              ? "Say how to reshape the data. Each step is previewed on the current tables; Apply adds it to the recipe, which runs again whenever Phase A runs again. Phases B to D check the result."
               : "Say what to change. Each instruction is previewed; Apply makes the change, logs it in the audit and re-checks the data."}
             {downstream ? " Applying a change discards the later phases, which then run again." : ""}
           </p>

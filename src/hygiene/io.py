@@ -156,9 +156,48 @@ def phase_a_index(root: Path) -> tuple[set | None, dict, dict]:
     return selected, layouts, names
 
 
+def shaped_tables(found: list[Table], shaped: Path, cfg: dict) -> tuple[list[Table], list[str]]:
+    """Apply Phase A's reshaping recipe to the tables Phase A found: (tables to clean, refs the recipe dropped).
+
+    `shaped` is the recipe's output folder (src/agent/transform/workspace.py). A table the recipe left untouched is
+    kept exactly as loaded from Phase A (with its cell notes and pasted columns). A table it changed is replaced by
+    its `handoff.parquet`; a table it created is added; a table it dropped is left out. Row ids of handed-off tables
+    are `<ref>:r<n>`; `lineage.parquet` in the same folder leads back to the source rows."""
+    try:
+        index = json.loads((shaped / "run.json").read_text("utf8"))
+    except (OSError, ValueError):
+        return found, []
+    if not index.get("steps"):
+        return found, []
+    by_ref = {t.ref: t for t in found}
+    out_refs = {e["ref"] for e in index["tables"]}
+    dropped = [i["ref"] for i in index.get("inputs", []) if i.get("ref") and i["ref"] not in out_refs]
+    out: list[Table] = []
+    for e in index["tables"]:
+        original = by_ref.get(e["ref"])
+        if not e.get("changed"):
+            if original is not None:
+                out.append(original)
+            continue
+        df = pl.read_parquet(shaped / "tables" / e["folder"] / "handoff.parquet")
+        t = Table(e["ref"], {c: df[c].to_list() for c in df.columns}, cfg,
+                  original.layout_id if original is not None else None,
+                  e.get("source_file") or (original.source_file if original is not None else None),
+                  (original.sheet if original is not None else None) or e["name"])
+        t.audit.append(t._entry("reshape", None, None, action="reshaped", old_value=None, new_value=f"{df.height} row(s)",
+                                note="Table reshaped in Phase A by the recipe (Transform_Report.xlsx lists the steps); "
+                                     "the checks ran on the result."))
+        out.append(t)
+    in_recipe = {i.get("ref") for i in index.get("inputs", [])}
+    out += [t for t in found if t.ref not in in_recipe and t.ref not in out_refs]      # not part of the recipe at all
+    return out, dropped
+
+
 def load_tables(root: Path, cfg: dict, sheet: str | None = None, tables: list[str] | None = None,
-                all_tables: bool = False) -> tuple[list[Table], list[dict], list[str]]:
+                all_tables: bool = False, shaped: Path | None = None) -> tuple[list[Table], list[dict], list[str]]:
     """Every table under `root` -> (tables, unreadable, skipped).
+
+    `shaped`: the folder of Phase A's reshaping recipe, when one ran; its result replaces the tables it changed.
 
     `root` is a Phase A output folder (only the tables Phase A selected are read, unless `all_tables`) or a single
     CSV/XLSX/Parquet file. `sheet` / `tables` narrow the run to one sheet name / table refs (fnmatch patterns).
@@ -184,6 +223,9 @@ def load_tables(root: Path, cfg: dict, sheet: str | None = None, tables: list[st
                 skipped.append(t.ref)
             else:
                 out.append(t)
+    if shaped is not None:
+        out, dropped = shaped_tables(out, Path(shaped), cfg)
+        skipped += dropped
     return out, unreadable, skipped
 
 

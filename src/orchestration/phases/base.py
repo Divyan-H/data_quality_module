@@ -168,6 +168,10 @@ class Phase:
     # -- Fix-with-agent (src/agent) ---------------------------------------
     supports_agent: bool = False
 
+    def replay(self, ctx: Context, params: dict) -> dict:
+        """Phase A only: run its reshaping recipe again on the tables as they are now."""
+        raise PhaseError("not_supported", f"Phase {self.key} has no reshaping recipe.")
+
     def agent_workspace(self, ctx: Context, params: dict):
         """The phase's data as an agent Workspace (preview / apply / restore). Only phases with supports_agent."""
         raise PhaseError("agent_not_available", f"The agent is not available for Phase {self.key} yet.")

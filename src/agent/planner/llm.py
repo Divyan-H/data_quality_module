@@ -47,8 +47,9 @@ Rules for you:
 
 PHASE_NOTE = {
     "B": "This is a checking phase: only value changes are possible here. Reshaping a table (unpivot, pivot, aggregate, "
-         "joins) is not available; if the analyst asks for it, set intent \"unclear\" and say it belongs in Phase T.",
-    "T": "This is the transformation phase: give `table` when there are several tables. Review items cannot be answered here.",
+         "joins) is not available; if the analyst asks for it, set intent \"unclear\" and say reshaping is done in Phase A's review (Reshape with agent).",
+    "T": "This is the reshaping step of Phase A (before the checks): give `table` when there are several tables. "
+         "Review items cannot be answered here.",
 }
 
 

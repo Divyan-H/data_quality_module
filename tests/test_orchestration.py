@@ -191,16 +191,16 @@ def test_outcome_of_a_job_from_what_it_left_behind(tmp_path, files, cancelled, t
 
 # ------------------------------------------------------------------ the state machine
 def test_phase_order_helpers():
-    assert ORDER == ["A", "B", "C", "D", "T"] and set(PHASES) == set(ORDER)
-    assert previous("A") is None and previous("C") == "B" and previous("T") == "D"
-    assert following("B") == ["C", "D", "T"] and following("D") == ["T"] and following("T") == []
+    assert ORDER == ["A", "B", "C", "D"] and set(PHASES) == set(ORDER)
+    assert previous("A") is None and previous("C") == "B" and previous("D") == "C"
+    assert following("B") == ["C", "D"] and following("A") == ["B", "C", "D"] and following("D") == []
 
 
 def test_only_phases_c_and_d_need_a_config_and_only_a_uses_the_llm():
     assert {k for k in ORDER if PHASES[k].needs_config} == {"C", "D"}
     assert {k for k in ORDER if PHASES[k].uses_llm} == {"A"}
-    assert {k for k in ORDER if PHASES[k].optional} == {"T"}                        # Transformations can be skipped
-    assert {k for k in ORDER if PHASES[k].supports_agent} == {"B", "T"}
+    assert {k for k in ORDER if PHASES[k].optional} == set()                        # reshaping is part of Phase A, not a phase
+    assert {k for k in ORDER if PHASES[k].supports_agent} == {"A", "B"}
 
 
 def test_unknown_phase_is_an_error_not_a_crash(service_settings, weekly_copy):
@@ -264,7 +264,7 @@ def test_bundle_of_a_run_with_no_results_is_empty_but_valid(service_settings, we
     p = Pipeline(service_settings)
     rid = p.create_run("r", [("w.xlsx", weekly_copy)], "off")
     assert bundle.collect(p.store.path(rid)) == []
-    assert p.results(rid) == {"complete": False, "files": [], "phases": {"A": "ready", "B": "locked", "C": "locked", "D": "locked", "T": "locked"}}
+    assert p.results(rid) == {"complete": False, "files": [], "phases": {"A": "ready", "B": "locked", "C": "locked", "D": "locked"}}
     path, name = p.bundle_zip(rid)
     assert name == "data_quality_results.zip" and path.exists()
 
@@ -274,3 +274,21 @@ def test_a_store_outside_the_workspace_cannot_be_reached_through_the_pipeline(se
     with pytest.raises(RunNotFound):                   # refused as an id, never resolved as a path
         p.view("../../etc")
     assert isinstance(p.store, RunStore)
+
+
+def test_a_run_made_with_the_old_fifth_phase_is_migrated_on_start_up(tmp_path):
+    """Runs created when transformations were Phase T (after D) carry a "T" entry in state.json; the four-phase service
+    drops it instead of failing on an unknown phase."""
+    settings = load_service_settings(workspace=tmp_path / "runs", agent_llm=False)
+    p = Pipeline(settings)
+    src = tmp_path / "in.csv"
+    src.write_text("Date,Spend\n2025-01-01,5\n")
+    rid = p.create_run("old", [("in.csv", src)], "off")
+    p.store.update(rid, lambda s: s["phases"].update(T={"key": "T", "status": "ready", "attempt": 0, "params": {}}))
+    p.shutdown()
+    again = Pipeline(settings)
+    try:
+        assert list(again.store.load(rid)["phases"]) == ["A", "B", "C", "D"]
+        assert [ph["key"] for ph in again.view(rid)["phases"]] == ["A", "B", "C", "D"]
+    finally:
+        again.shutdown()

@@ -80,5 +80,7 @@ class RecipeLibrary:
         data = json.loads(p.read_text("utf8"))
         built_in = data.get("phase", "T")
         if phase is not None and built_in != phase:
-            raise AgentError("wrong_phase", f"'{data.get('name', name)}' is a Phase {built_in} recipe; use it in Phase {built_in}.")
+            where = {"T": "a reshaping recipe; use it with Reshape with agent on Phase A's review",
+                     "B": "a recipe of value fixes; use it with Fix with agent on Phase B's review"}.get(built_in, f"a Phase {built_in} recipe")
+            raise AgentError("wrong_phase", f"'{data.get('name', name)}' is {where}.")
         return OPS.validate_python(data["steps"])

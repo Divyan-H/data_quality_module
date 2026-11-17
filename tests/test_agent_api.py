@@ -200,7 +200,7 @@ def test_the_agent_is_refused_where_it_cannot_act(af, phase_b, weekly_files):
     assert r.status_code == 404
     r = af.c.post(f"/api/v1/runs/{phase_b}/phases/B/agent/messages", json={"text": ""})
     assert r.status_code == 422
-    assert af.c.get("/api/v1/options").json()["agent"]["phases"] == ["B", "T"]
+    assert af.c.get("/api/v1/options").json()["agent"]["phases"] == ["A", "B"]
 
 
 def test_a_destructive_change_needs_an_explicit_confirmation_through_the_api(af, phase_b, app_client):

@@ -5,11 +5,11 @@ src/
   api/              HTTP only. api_server.py (app, Job Contract, middleware wiring), v1.py (analyst API)
   orchestration/    orchestrator.py (Pipeline state machine), runner.py (job processes), worker.py (a job),
                     agent.py (AgentController), settings.py, bundle.py (results zip), sources.py
-    phases/         base.py (the Phase interface) + one adapter per phase
+    phases/         base.py (the Phase interface) + one adapter per phase; reshape.py (Phase A's recipe)
   agent/            registry.py, operations.py, planner/ (parser, llm, context), guardrails.py, executors.py,
                     selectors.py, safe_regex.py, service.py, store.py, workspace.py, views.py, recipes.py,
                     evaluation.py, describe.py, session.py
-    transform/      engine.py (Polars), workspace.py, describe.py           — Phase T
+    transform/      engine.py (Polars), workspace.py, describe.py           — reshaping, run inside Phase A
   structure/        Phase A (readers, regions, header scoring, extraction, review workbook, llm/)
   hygiene/          Phase B (rules, values, cities, review, pipeline)
   timeseries/       Phase C          trends/   Phase D

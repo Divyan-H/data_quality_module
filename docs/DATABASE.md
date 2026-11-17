@@ -10,7 +10,8 @@ There is no database server. Run data lives in **run folders**; the audit trail 
   events.jsonl        live progress lines, appended by the worker
   inputs/             uploaded files
   phase_a/  work/     phase outputs: parquet tables, findings and review items as JSON, review workbooks
-  config/             client config workbooks, the Phase T recipe
+  phase_a_shaped/     the reshaping recipe's result: tables, run.json, lineage.parquet, report
+  config/             client config workbooks, the reshaping recipe (A_recipe.json)
   uploads/            every uploaded review workbook
   agent/<phase>/      session.json, changesets/cs-0001.json, snapshots/cs-0001/ (for undo)
   jobs/<job id>/      request.json, result.json, stderr.log

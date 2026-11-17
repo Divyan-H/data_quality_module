@@ -15,7 +15,7 @@
 ## Commands
 
 ```bash
-python -m pytest -q -n auto            # 730 tests, about 2 minutes on 4 cores
+python -m pytest -q -n auto            # 734 tests, about 2 minutes on 4 cores
 ```
 
 ```bash

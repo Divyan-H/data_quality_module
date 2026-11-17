@@ -29,6 +29,8 @@ from .describe import step_line, transform_summary
 
 OPS = TypeAdapter(list[Operation])
 REPORT = "Transform_Report.xlsx"
+HANDOFF = "handoff.parquet"          # a changed table as Phases B-D load it (src/hygiene/io.py::shaped_tables)
+LINEAGE = "lineage.parquet"
 REPORT_ROWS = 5000
 
 
@@ -59,7 +61,7 @@ class TransformWorkspace(Workspace):
         self.out, self.recipe_path, self.inputs = Path(out), Path(recipe), inputs
         self.library = RecipeLibrary(library)
         if not inputs:
-            raise AgentError("not_ready", "There are no checked tables to transform yet.")
+            raise AgentError("not_ready", "There are no tables to reshape yet.")
 
     # ── state ────────────────────────────────────────────────────────────────
     def version(self) -> str:
@@ -161,10 +163,16 @@ class TransformWorkspace(Workspace):
 
     # ── output ───────────────────────────────────────────────────────────────
     def _save(self, tables: engine.Tables, steps: list[dict], failed: dict | None) -> None:
+        """Write the result. Besides each table as the engine holds it (`data.parquet`, with lineage row ids), every
+        table the recipe changed or created gets a `handoff.parquet` for the checking phases: all values as text, and
+        row ids of the form `<table ref>:r<n>` (Phases B-D read a table's ref off its row ids). `lineage.parquet`
+        maps each of those ids back to the row it came from."""
         meta = {t["name"]: t for t in self.inputs}
+        originals = self.read_inputs()
+        file_key = next((str(t["ref"]).split(":")[0] for t in self.inputs if t.get("ref")), "reshape")
         tdir = self.out / "tables"
         shutil.rmtree(tdir, ignore_errors=True)
-        entries, used = [], set()
+        entries, used, lineage = [], set(), []
         for name, df in tables.items():
             folder, n = safe(name), 1
             while folder.lower() in used:
@@ -174,13 +182,35 @@ class TransformWorkspace(Workspace):
             (tdir / folder).mkdir(parents=True, exist_ok=True)
             df.write_parquet(tdir / folder / "data.parquet")
             m = meta.get(name, {})
+            ref = m.get("ref") or f"{file_key}:r:{folder.lower()}"
+            changed = not (name in originals and df.equals(originals[name]))
+            if changed:
+                lineage += self._handoff(df, ref, tdir / folder / HANDOFF)
             entries.append({"name": name, "folder": folder, "rows": df.height, "columns": engine.data_cols(df),
-                            "source_file": m.get("source_file"), "from_input": name in meta})
+                            "source_file": m.get("source_file"), "sheet": m.get("sheet"), "from_input": name in meta,
+                            "ref": ref, "changed": changed})
+        pl.DataFrame(lineage, schema={"table_ref": pl.String, "row_id": pl.String, "origin_id": pl.String,
+                                      "source_row": pl.Int64}, orient="row").write_parquet(self.out / LINEAGE)
         index = {"tables": entries, "steps": steps, "failed": failed,
-                 "inputs": [{"name": t["name"], "source_file": t.get("source_file"), "sheet": t.get("sheet")} for t in self.inputs]}
+                 "inputs": [{"name": t["name"], "source_file": t.get("source_file"), "sheet": t.get("sheet"),
+                             "ref": t.get("ref")} for t in self.inputs]}
         (self.out / "run.json").write_text(json.dumps(index, ensure_ascii=False, default=str, indent=1), encoding="utf8")
         (self.out / "recipe.json").write_text(json.dumps({"steps": [s["op"] for s in steps]}, indent=1, default=str), encoding="utf8")
         self._report(tables, index)
+
+    @staticmethod
+    def _handoff(df: pl.DataFrame, ref: str, path: Path) -> list[tuple]:
+        """The table as the checking phases load it; returns its lineage rows (ref, new id, origin id, source row)."""
+        cols = engine.data_cols(df)
+        ids = [f"{ref}:r{n}" for n in range(1, df.height + 1)]
+        origin = df["_row_id"].cast(pl.String).to_list() if "_row_id" in df.columns else [None] * df.height
+        source = (df["_source_row"].cast(pl.Int64, strict=False).to_list() if "_source_row" in df.columns
+                  else [None] * df.height)
+        data: dict[str, list] = {"_row_id": ids, "_source_row": source}
+        data |= {c: [engine.render(v) for v in df[c].to_list()] for c in cols}
+        pl.DataFrame(data, schema={"_row_id": pl.String, "_source_row": pl.Int64, **{c: pl.String for c in cols}}
+                     ).write_parquet(path)
+        return [(ref, i, o, s) for i, o, s in zip(ids, origin, source)]
 
     def _report(self, tables: engine.Tables, index: dict) -> None:
         wb = openpyxl.Workbook(write_only=True)
@@ -235,7 +265,7 @@ class TransformViews:
         try:
             self.index = json.loads((self.out / "run.json").read_text("utf8"))
         except (OSError, ValueError) as e:
-            raise AgentError("not_ready", "Phase T has not run yet.") from e
+            raise AgentError("not_ready", "Phase A has no tables to reshape yet.") from e
 
     def issues(self) -> dict:
         tables = [{"ref": t["name"], "file": t.get("source_file"), "sheet": t["name"], "rows": t["rows"], "columns": t["columns"]}
@@ -248,7 +278,7 @@ class TransformViews:
     def rows(self, table: str, offset: int = 0, limit: int = 100, rule=None, column=None, only=None) -> dict:
         entry = next((t for t in self.index["tables"] if t["name"] == table), None)
         if entry is None:
-            raise AgentError("no_such_table", f"There is no table {table} in Phase T's output.")
+            raise AgentError("no_such_table", f"There is no table {table} among the reshaped tables.")
         limit = max(1, min(limit, 500))
         df = pl.read_parquet(self.out / "tables" / entry["folder"] / "data.parquet")
         cols = engine.data_cols(df)

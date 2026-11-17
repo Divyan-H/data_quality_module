@@ -990,7 +990,7 @@ def apply_op(tables: Tables, op) -> dict:
     """Run one operation on `tables` (in place). Returns its effect; raises AgentError when it cannot run."""
     fn = EXECUTORS.get(op.op)
     if fn is None:
-        raise AgentError("not_in_phase", "Review items are answered in the checking phases (B), not in Transformations.")
+        raise AgentError("not_in_phase", "Review items are answered in the checking phases (B), not while reshaping.")
     fx = Effect(tables)
     try:
         fn(tables, op, fx)

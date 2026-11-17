@@ -33,10 +33,11 @@ class Planner:
         name = outside[0].replace("_", " ")
         if ctx.phase == "T":
             return Plan(answer=f"'{name}' answers review items, which belong to the checking phases (B), not to "
-                               "Transformations. Open that phase's review to use it.", source=plan.source)
-        return Plan(answer=f"'{name}' changes the shape of the table, so it belongs in Phase T (Transformations), after "
-                           "the checks. Accept the checking phases, then open Phase T and ask there. Value fixes, new "
-                           "columns and splitting a column into columns work here.", source=plan.source)
+                               "reshaping. Open Phase B's review to use it.", source=plan.source)
+        return Plan(answer=f"'{name}' changes the shape of the table. Reshaping is done in Phase A's review, before the "
+                           "checks: open Phase A, click Reshape with agent and ask there (the checking phases then run "
+                           "again on the result). Value fixes, new columns and splitting a column into columns work "
+                           "here.", source=plan.source)
 
     def _plan(self, text: str, ctx: PlanningContext) -> Plan:
         parser = CommandParser(ctx)

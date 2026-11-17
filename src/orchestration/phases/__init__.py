@@ -1,16 +1,17 @@
-"""Phase adapters, in pipeline order. Adding a phase = one adapter class + one line here."""
+"""Phase adapters, in pipeline order. Adding a phase = one adapter class + one line here.
+
+Reshaping (unpivot, split, aggregate, joins ...) is not a phase: it is the optional second half of Phase A
+(`reshape.py`), so Phases B-D check the tables in the shape they will be loaded in."""
 from __future__ import annotations
 
 from .base import Phase
 from .hygiene import HygienePhase
 from .structure import StructurePhase
 from .timeseries import TimeseriesPhase
-from .transform import TransformPhase
 from .trends import TrendsPhase
 
-ORDER = ["A", "B", "C", "D", "T"]
-PHASES: dict[str, Phase] = {p.key: p for p in (StructurePhase(), HygienePhase(), TimeseriesPhase(), TrendsPhase(),
-                                                 TransformPhase())}
+ORDER = ["A", "B", "C", "D"]
+PHASES: dict[str, Phase] = {p.key: p for p in (StructurePhase(), HygienePhase(), TimeseriesPhase(), TrendsPhase())}
 
 
 def previous(key: str) -> str | None:

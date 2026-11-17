@@ -50,7 +50,7 @@ HELP = """I can change this phase's data for you. Each change is shown as a prev
 • "remove rows where Status is Test"  •  "split the multi-value cells in City"
 Ask "summary" to see what is still open.
 
-In Transformations (Phase T) the chat also reshapes tables:
+In Phase A's review (Reshape with agent) the chat also reshapes tables, before the checks run:
 • "unpivot Day 1 to Day 31 into rows as Day and Reactivated"  •  "make Date from Month and Day"
 • "pivot Inactivity Bucket into columns using Reactivated"  •  "split Full Name into First and Last"
 • "split City into rows sharing Usage keeping Delhi NCR together"  •  "sum Impressions, Clicks by day, channel, network"

@@ -298,9 +298,9 @@ def test_split_column_and_classify_in_phase_b(ws):
     assert t.data["Size"] == ["Small", "Small", "Small", "Small", "Big", "Big", "Big"]
 
 
-def test_reshaping_in_phase_b_points_to_phase_t(ws):
+def test_reshaping_in_phase_b_points_to_phase_a(ws):
     from src.agent.operations import Unpivot
-    with pytest.raises(AgentError, match="Phase T"):
+    with pytest.raises(AgentError, match="Reshape with agent"):
         ws.preview([Unpivot(columns=["Orders", "AOV"])], "cs-0001", "x")
 
 
@@ -343,7 +343,7 @@ def test_a_phase_t_recipe_is_refused_in_phase_b(run, tmp_path):
     lib.save("Reshape", [{"op": "unpivot", "columns": ["Orders", "AOV"]}], "T", phase="T")
     svc = AgentService(HygieneWorkspace(run, load_config(None)), AgentStore(run, "B"), Planner(None), lib)
     reply = svc.message("use recipe Reshape")
-    assert reply["changeset"] is None and "Phase T recipe" in reply["messages"][1]["text"]
+    assert reply["changeset"] is None and "reshaping recipe" in reply["messages"][1]["text"]
 
 
 def test_row_pages_read_only_the_page_and_filters_follow_changes(ws, run):

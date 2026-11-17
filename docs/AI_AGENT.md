@@ -32,10 +32,17 @@ instruction ─▶ command parser (no model) ──understood──▶ typed ope
 | Command parser | `src/agent/planner/parser.py`, `transform_commands.py` | Deterministic; works with no model |
 | Model planner | `src/agent/planner/llm.py` | Prompt version `agent-plan/3`; at most 6 operations per plan; 2 attempts |
 | Context | `src/agent/planner/context.py` | Column names, column kinds, up to 6 top values per text column, open finding groups, the last 6 turns. Never whole rows |
-| Guardrails | `src/agent/guardrails.py` | Elevated = removes rows / columns / tables, aggregates, ≥ 1,000 cells, or a table losing > 5% of its rows |
-| Executors | `src/agent/executors.py` (Phase B), `transform/engine.py` (Phase T, Polars) | |
+| Guardrails | `src/agent/guardrails.py` | Elevated = removes rows / columns / tables, aggregates, ≥ 1,000 cells, a table losing > 5% of its rows, or a reshaping step that changes numbers before the checks run |
+| Executors | `src/agent/executors.py` (Phase B: value fixes), `transform/engine.py` (Phase A: reshaping, Polars) | |
 | Use cases | `src/agent/service.py` | message, apply, undo, discard |
 | Safe patterns | `src/agent/safe_regex.py` | 500-character limit, 0.25 s per match |
+
+## Where the agent works
+
+| Screen | Tool set | What it changes |
+|---|---|---|
+| Phase A review · *Reshape with agent* | every tool except `resolve_findings` (registry phase `T`) | The reshaping recipe; Phases B–D then check the result |
+| Phase B review · *Fix with agent* | the value tools (registry phase `B`) | Checked values and review items |
 
 ## Privacy
 

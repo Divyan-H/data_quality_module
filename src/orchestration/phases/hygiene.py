@@ -13,6 +13,7 @@ from src.hygiene.review import ReviewError, apply_upload
 from src.hygiene.values import has_keyword
 
 from .base import ensure_workbook, Artifact, Context, Paths, Phase, PhaseError, ReviewRejected, copy_version, read_json, wipe
+from . import reshape
 from .structure import chosen_tables
 
 REVIEW = "Hygiene_Review.xlsx"
@@ -56,7 +57,8 @@ class HygienePhase(Phase):
             raise PhaseError("not_ready", "Phase A has no output to read.")
         cfg = load_config(ctx.settings_path)
         chosen = chosen_tables(ctx.run)
-        found, _, _ = load_tables(paths.phase_a, cfg, tables=chosen, all_tables=chosen is not None)
+        found, _, _ = load_tables(paths.phase_a, cfg, tables=chosen, all_tables=chosen is not None,
+                                  shaped=reshape.out(paths.run))
         out = []
         for t in found:
             period, _ = period_column(t)
@@ -85,7 +87,7 @@ class HygienePhase(Phase):
         try:
             run_hygiene(str(paths.phase_a), str(paths.work), ctx.settings_path,
                         {**overrides_from(params), **hygiene_overrides(load_for_run(ctx.run)[0])},
-                        tables=chosen, all_tables=chosen is not None)
+                        tables=chosen, all_tables=chosen is not None, shaped=str(reshape.out(ctx.run)))
         except (ValueError, FileNotFoundError) as e:
             raise PhaseError("phase_failed", str(e)) from e
         return self.summary(ctx.run)

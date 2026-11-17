@@ -79,6 +79,8 @@ def main(job_dir: str) -> int:
             data = {"tables": phase.columns(ctx)}
         elif action == "template":
             data = {"path": str(phase.make_template(ctx, params.get("table")))}
+        elif action == "reshape":                         # Phase A: replay the recipe (after a new table selection)
+            data = phase.replay(ctx, params)
         elif action == "check_config":
             data = phase.check_config(ctx, Path(req["upload"]), params.get("table"))
         elif action.startswith("agent_"):
@@ -88,7 +90,7 @@ def main(job_dir: str) -> int:
             data = run_action(phase, ctx, action, params)
         else:
             raise PhaseError("bad_action", f"unknown action {action}")
-        if action in ("run", "review", "agent_apply", "agent_undo"):
+        if action in ("run", "review", "reshape", "agent_apply", "agent_undo"):
             emit.stage("summarising", 100)
             (run / "summaries").mkdir(exist_ok=True)
             (run / "summaries" / f"{phase.key}.json").write_text(

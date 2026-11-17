@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0 — 2026-11-16 · reshaping moves into Phase A
+
+### Changed
+- **The pipeline is `A → B → C → D`.** Transformations are no longer a fifth phase after D: the recipe is built with
+  *Reshape with agent* on Phase A's review, and Phases B–D check the reshaped tables.
+- Phase B loads tables the recipe changed or created from `phase_a_shaped/` (row ids `<ref>:r<n>`, with
+  `lineage.parquet` back to the source rows); untouched tables are read from Phase A exactly as before.
+- The recipe replays when Phase A runs again, its review workbook is uploaded, or the table selection changes.
+- Reshaping steps that change numbers (aggregate, allocate, net, convert currency, bucket others) need an explicit
+  confirmation, because the checks now run on their result.
+
+### Fixed
+- A rule-based new column (`classify`) was also added to tables that lack the column the rules test.
+
+### Breaking
+- `/api/v1/runs/{id}/phases/T/...` answers 404 `unknown_phase`; the same chat is at `/phases/A/agent/...`.
+- Runs made under the old flow lose their `T` entry on start-up; a `T_recipe.json` is taken over as Phase A's recipe
+  the next time Phase A runs. Final files of a run already finished under the old flow are still served.
+
 ## 1.1.0 — 2026-11-12 · production-hardening audit
 
 ### Fixed

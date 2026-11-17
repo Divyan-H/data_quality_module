@@ -6,12 +6,11 @@ machine or server; the agent uses a **local open-source model** (Ollama) and no 
 
 | Phase | What it does |
 |---|---|
-| A · Structure | Finds tables, headers and footers inside messy workbooks |
+| A · Structure | Finds tables, headers and footers inside messy workbooks; optionally **reshapes** them from a recipe (unpivot, split, allocate, aggregate, join) before the checks |
 | B · Hygiene | 33 cell rules: dates, types, spellings, units, duplicates, negatives, multi-value cells |
 | C · Time series | Missing periods, repeats, cadence breaks |
 | D · Trends | Spikes, level shifts, monthly-to-weekly |
-| T · Transformations (optional) | Reshapes tables from a recipe: unpivot, split, allocate, aggregate, join |
-| Fix-with-agent | "Spend is in thousands" → typed operation → preview → Apply → Undo |
+| Agent | *Reshape with agent* in Phase A, *Fix with agent* in Phase B: "Spend is in thousands" → typed operation → preview → Apply → Undo |
 
 ## Quick start (your own machine)
 

@@ -326,12 +326,15 @@ def split_column(s: EditSession, op: SplitColumn) -> None:
                 continue
             s.add_column(t, name, [p[k] for p in parts], f"Split from {col} by the agent.")
         if not op.keep_original and col not in op.into:
-            s.note(f"{col} is kept: Phase B never removes a column (it is left out in Phase T if you drop it there).")
+            s.note(f"{col} is kept: Phase B never removes a column (drop it with Reshape with agent in Phase A's review if it should not be loaded).")
 
 
 # ── classify ────────────────────────────────────────────────────────────────
 def classify(s: EditSession, op: Classify) -> None:
+    needed = {c.column for rule in op.rules for c in rule.when}
     for t in _chosen(s.tables, op.tables):
+        if any(column_in(t, c) is None for c in needed):     # a table without the columns the rules test is left alone
+            continue
         n = len(t.data["_row_id"])
         chosen: list[int | None] = [None] * n
         for k, rule in enumerate(op.rules):
@@ -365,8 +368,8 @@ def execute(s: EditSession, ops: list) -> None:
     for op in ops:
         if op.op in SHAPE_OPS:
             raise AgentError("needs_transform_phase",
-                             f"'{op.op.replace('_', ' ')}' changes the shape of the table, so it belongs in Phase T "
-                             "(Transformations), after the checks. Accept the checking phases, then open Phase T and ask "
-                             "there. Value fixes, new columns and splitting a column into columns work here.")
+                             f"'{op.op.replace('_', ' ')}' changes the shape of the table. Reshaping is done in Phase A's "
+                             "review, before the checks: open Phase A, click Reshape with agent and ask there. Value "
+                             "fixes, new columns and splitting a column into columns work here.")
         s.begin()
         EXECUTORS[op.op](s, op)

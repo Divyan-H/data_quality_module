@@ -61,7 +61,7 @@ Run the full suite afterwards.
 ## Adding an agent operation
 
 1. The input model in `src/agent/operations.py` (add it to `VALUE_TYPES` or `SHAPE_TYPES`).
-2. The executor in `src/agent/executors.py` (Phase B) and/or `src/agent/transform/engine.py` (Phase T).
+2. The executor in `src/agent/executors.py` (Phase B) and/or `src/agent/transform/engine.py` (reshaping in Phase A).
 3. One `Tool` in `src/agent/registry.py`: phases, risk, summary. `tests/test_agent_registry.py` fails until the
    three agree.
 4. Wording in `src/agent/planner/parser.py` or `transform_commands.py`, and a line in `describe.py`.

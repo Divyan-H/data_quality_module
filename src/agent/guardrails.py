@@ -23,6 +23,12 @@ _HIGH_RISK_TEXT = {
 }
 
 
+# Reshaping runs before Phases B-D, so these steps change what the checks see: they must be a deliberate choice.
+CHANGES_NUMBERS = {"aggregate", "allocate_by_share", "net_next_period", "convert_currency", "bucket_others"}
+BEFORE_CHECKS = ("It changes the numbers before the checks run: Phases B-D will check the result of this step, not the "
+                 "client's original rows.")
+
+
 def _row_changes(preview: dict) -> list[tuple[str, int, int]]:
     """(table, rows before, rows after) for every table a transformation preview resized."""
     out = []
@@ -42,6 +48,8 @@ def assess(ops: list, preview: dict, confirm_cells: int = CONFIRM_CELLS) -> dict
             text = _HIGH_RISK_TEXT.get(op.op, f"'{op.op.replace('_', ' ')}' cannot be reversed by a later step.")
             if text not in reasons:
                 reasons.append(text)
+    if preview.get("kind") == "transform" and any(op.op in CHANGES_NUMBERS for op in ops):
+        reasons.append(BEFORE_CHECKS)
     totals = preview.get("totals") or {}
     cells = totals.get("cells") or sum((s.get("effect") or {}).get("cells", 0) or 0 for s in preview.get("operations", []))
     if cells >= confirm_cells:

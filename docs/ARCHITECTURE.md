@@ -16,7 +16,7 @@ Browser ──HTTPS──▶ Caddy (TLS, body limits)                     Other 
         │ orchestration/                                                         │
         │   Pipeline      state machine per run; owns state.json                 │
         │   JobRunner     one worker process per job, limit, timeout, drain      │
-        │   phases/       one adapter per phase (A, B, C, D, T)                  │
+        │   phases/       one adapter per phase (A, B, C, D); reshape.py in A    │
         │   AgentController  when the chat may act; what an apply means          │
         └───────────────┬────────────────────────────────────────────────────────┘
                         │ subprocess: python -m src.orchestration.worker <job dir>
@@ -52,6 +52,9 @@ locked ──(previous phase accepted)──▶ ready ──start──▶ runni
                                                           │           └──┘ review upload, agent apply, agent undo
                                                           └──▶ failed | cancelled   (start again)
 ```
+
+Phase A has two halves: detecting the tables, then an optional reshaping recipe built in its chat
+(`phases/reshape.py`, `docs/transformations.md`); Phases B–D check the result.
 
 A change in a phase (upload, apply, undo) discards the outputs of every later phase: they checked older data.
 Only a person accepts a phase; the agent has no tool for it.

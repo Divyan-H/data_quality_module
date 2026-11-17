@@ -14,7 +14,7 @@
    "accuracy": 0.7364,
    "wrong_rate": 0.0,
    "p50_s": 0.0,
-   "p95_s": 0.004,
+   "p95_s": 0.005,
    "answered_by_rules": 70,
    "answered_by_model": 0
   },
@@ -27,7 +27,7 @@
     "accuracy": 0.9818,
     "wrong_rate": 0.0,
     "p50_s": 0.002,
-    "p95_s": 0.006,
+    "p95_s": 0.005,
     "answered_by_rules": 54,
     "answered_by_model": 0
    },
@@ -65,7 +65,7 @@
     "accuracy": 0.7812,
     "wrong_rate": 0.0,
     "p50_s": 0.0,
-    "p95_s": 0.004,
+    "p95_s": 0.005,
     "answered_by_rules": 42,
     "answered_by_model": 0
    },
@@ -77,7 +77,7 @@
     "accuracy": 0.6739,
     "wrong_rate": 0.0,
     "p50_s": 0.0,
-    "p95_s": 0.004,
+    "p95_s": 0.005,
     "answered_by_rules": 28,
     "answered_by_model": 0
    }
@@ -95,7 +95,7 @@
     "resolve_findings"
    ],
    "kind": "plan",
-   "seconds": 0.01,
+   "seconds": 0.011,
    "note": ""
   },
   {
@@ -109,7 +109,7 @@
     "resolve_findings"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -151,7 +151,7 @@
     "replace_values"
    ],
    "kind": "plan",
-   "seconds": 0.006,
+   "seconds": 0.005,
    "note": ""
   },
   {
@@ -193,7 +193,7 @@
     "replace_text"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -207,7 +207,7 @@
     "set_value"
    ],
    "kind": "plan",
-   "seconds": 0.004,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -249,7 +249,7 @@
     "set_value"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.001,
    "note": ""
   },
   {
@@ -263,7 +263,7 @@
     "set_value"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.001,
    "note": ""
   },
   {
@@ -277,7 +277,7 @@
     "scale"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -305,7 +305,7 @@
     "scale"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.001,
    "note": ""
   },
   {
@@ -319,7 +319,7 @@
     "add_column"
    ],
    "kind": "plan",
-   "seconds": 0.006,
+   "seconds": 0.005,
    "note": ""
   },
   {
@@ -333,7 +333,7 @@
     "add_column"
    ],
    "kind": "plan",
-   "seconds": 0.004,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -347,7 +347,7 @@
     "add_column"
    ],
    "kind": "plan",
-   "seconds": 0.004,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -389,7 +389,7 @@
     "remove_rows"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.001,
    "note": ""
   },
   {
@@ -403,7 +403,7 @@
     "split_column"
    ],
    "kind": "plan",
-   "seconds": 0.004,
+   "seconds": 0.005,
    "note": ""
   },
   {
@@ -537,7 +537,7 @@
     "split_rows"
    ],
    "kind": "plan",
-   "seconds": 0.005,
+   "seconds": 0.004,
    "note": ""
   },
   {
@@ -551,7 +551,7 @@
     "split_rows"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -579,7 +579,7 @@
     "aggregate"
    ],
    "kind": "plan",
-   "seconds": 0.004,
+   "seconds": 0.003,
    "note": ""
   },
   {
@@ -593,7 +593,7 @@
     "aggregate"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.001,
    "note": ""
   },
   {
@@ -607,7 +607,7 @@
     "bucket_others"
    ],
    "kind": "plan",
-   "seconds": 0.007,
+   "seconds": 0.008,
    "note": ""
   },
   {
@@ -649,7 +649,7 @@
     "append_rows"
    ],
    "kind": "plan",
-   "seconds": 0.004,
+   "seconds": 0.005,
    "note": ""
   },
   {
@@ -773,7 +773,7 @@
     "add_column"
    ],
    "kind": "plan",
-   "seconds": 0.004,
+   "seconds": 0.005,
    "note": ""
   },
   {
@@ -815,7 +815,7 @@
     "classify"
    ],
    "kind": "plan",
-   "seconds": 0.003,
+   "seconds": 0.002,
    "note": ""
   },
   {
@@ -963,7 +963,7 @@
     "replace_values"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.001,
    "note": ""
   },
   {
@@ -991,7 +991,7 @@
     "replace_values"
    ],
    "kind": "plan",
-   "seconds": 0.002,
+   "seconds": 0.001,
    "note": ""
   },
   {

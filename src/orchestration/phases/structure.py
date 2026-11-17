@@ -18,6 +18,7 @@ from src.structure.job import load_edits, write_edits
 from src.structure.pipeline import Progress, run_structure
 from src.structure.review_import import apply_patch, import_review, merge_added
 
+from . import reshape
 from .base import Artifact, Context, Paths, Phase, ReviewRejected, PhaseError, copy_version, read_json, wipe
 
 SKIP = {".ds_store", "thumbs.db", "desktop.ini"}
@@ -72,6 +73,7 @@ class StructurePhase(Phase):
                  "footers, and gives each table permanent row ids. Anything it is unsure about is flagged for you.")
     uses_llm = True
     review_name = REVIEW
+    supports_agent = True                    # "Reshape with agent": the recipe of src/orchestration/phases/reshape.py
 
     # ------------------------------------------------------------------ run
     def _job(self, ctx: Context, out: Path, params: dict, config: dict) -> dict:
@@ -103,7 +105,22 @@ class StructurePhase(Phase):
             run_structure(self._job(ctx, paths.phase_a, params, config))
         except (JobFailed, ConfigInvalid) as e:
             raise PhaseError(getattr(e, "code", "config_invalid"), getattr(e, "message", str(e))) from e
+        self.replay(ctx, params)
         return self.summary(ctx.run)
+
+    # ------------------------------------------------------------------ reshaping (the recipe)
+    def replay(self, ctx: Context, params: dict) -> dict:
+        """Run the reshaping recipe on the tables as they are now (after a run, a review upload or a new selection)."""
+        ctx.emit.stage("reshaping", 95)
+        reshape.replay(ctx.run, self.summary(ctx.run).get("tables", []), params)
+        return self.summary(ctx.run)
+
+    def agent_workspace(self, ctx: Context, params: dict):
+        return reshape.workspace(ctx.run, self.summary(ctx.run).get("tables", []), params)
+
+    def agent_views(self, run: Path):
+        from src.agent.transform.workspace import TransformViews
+        return TransformViews(reshape.out(run))
 
     # ------------------------------------------------------------------ review upload
     def review(self, ctx: Context, upload: Path, params: dict) -> dict:
@@ -146,6 +163,7 @@ class StructurePhase(Phase):
         config["structure"]["selection"] = merged.selection
         (paths.phase_a_state / CONFIG).write_text(json.dumps(config, indent=1), encoding="utf8")
         copy_version(upload, paths.uploads, "A")
+        self.replay(ctx, params)
         return {**self.summary(ctx.run), "applied": {"overrides": len(patch.get("overrides", [])),
                                                       "selection_changed": "selection" in patch,
                                                       "cell_edits_total": len(edits),
@@ -154,8 +172,8 @@ class StructurePhase(Phase):
 
     def clear(self, run: Path) -> None:
         p = Paths(run)
-        for folder in (p.phase_a, p.phase_a_state, p.run / "phase_a_next"):
-            wipe(folder)
+        for folder in (p.phase_a, p.phase_a_state, p.run / "phase_a_next", reshape.out(run)):
+            wipe(folder)                                     # the recipe file stays: running A again replays it
 
     # ------------------------------------------------------------------ table choice
     def select(self, run: Path, refs: list[str]) -> None:
@@ -173,7 +191,8 @@ class StructurePhase(Phase):
     def can_continue(self, run: Path) -> tuple[bool, str | None]:
         if not any(t["selected"] for t in self.summary(run).get("tables", [])):
             return False, "No table is selected, so there is nothing to clean. Tick at least one table, or fix the blocking issues."
-        return True, None
+        why = reshape.blocked(run)
+        return (False, why) if why else (True, None)
 
     def summary(self, run: Path) -> dict:
         out = Paths(run).phase_a
@@ -211,7 +230,7 @@ class StructurePhase(Phase):
                 "blocking": [a["message"] for a in items if a["severity"] == "block"],
                 "issue_counts": by_status, "issues": issues["rows"], "issues_total": issues["total"],
                 "changes": changes["rows"], "changes_total": changes["total"], "tables": tables,
-                "llm": ex["llm"]}
+                "llm": ex["llm"], "reshape": reshape.summary(run)}
 
     def artifacts(self, run: Path) -> list[Artifact]:
         out = Paths(run).phase_a
@@ -225,7 +244,7 @@ class StructurePhase(Phase):
              "Every question the local model was asked and how it was decided.", False),
         ]
         return [Artifact(i, label, p, kind, "A", desc, primary) for i, label, p, kind, desc, primary in spec
-                if _nonempty(p)]
+                if _nonempty(p)] + reshape.artifacts(run)
 
 
 def _nonempty(path: Path) -> bool:

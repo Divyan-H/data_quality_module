@@ -211,7 +211,7 @@ export function ChatPanel({ state, busy, sending, working, draft, setDraft, onSe
         {count === 0 && (
           <div className="msg agent answer">
             <div className="msg-text">
-              {phase === "T" ? (
+              {phase === "A" ? (
                 <>
                   Tell me how to reshape the tables, one step at a time. I show the result first; Apply adds the step to the recipe.
                   {"\n"}Try: “unpivot Day 1 to Day 31 into rows as Day and Value”, “split City into rows sharing Usage”,
@@ -242,7 +242,7 @@ export function ChatPanel({ state, busy, sending, working, draft, setDraft, onSe
         <textarea
           ref={input}
           aria-label="Instruction for the agent"
-          placeholder={phase === "T" ? "e.g. sum Clicks, Installs by day, channel" : "e.g. set Region to APAC where Country is India"}
+          placeholder={phase === "A" ? "e.g. sum Clicks, Installs by day, channel" : "e.g. set Region to APAC where Country is India"}
           value={draft}
           rows={2}
           maxLength={2000}
