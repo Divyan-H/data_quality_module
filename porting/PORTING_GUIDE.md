@@ -5,7 +5,7 @@
 ## 0. Instructions for Claude
 
 You are working in the **production repository** of the Data Pipeline (DQ) service. The user has put a copy of a
-second repository next to it: `data_quality_module`, branch `reshape-in-phase-a`, downloaded as a zip. That copy
+second repository next to it: `data_quality_module`, branch `main` (all work merged in), downloaded as a zip. That copy
 holds about three weeks of changes made in one Claude Code cloud session (2026-11-02 to 2026-11-19). Your job is to
 carry **all** of those changes into the production repository, so production behaves exactly like the copy.
 
